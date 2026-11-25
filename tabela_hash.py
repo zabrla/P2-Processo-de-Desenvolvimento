@@ -27,7 +27,6 @@ def _proximo_primo(n):
 
 
 class TabelaHash:
-    """Tabela hash com encadeamento separado."""
 
     CARGA_MAXIMA = 0.75
 
@@ -102,7 +101,6 @@ class TabelaHash:
         self._capacidade = _proximo_primo(nova_capacidade)
         self._buckets = [None] * self._capacidade
 
-        # O índice depende da capacidade, então todo nó precisa ser recalculado.
         for cabeca in antigos:
             atual = cabeca
             while atual is not None:
@@ -131,7 +129,6 @@ class TabelaHash:
         return resultado
 
     def colisoes(self):
-        """Quantidade de registros além do primeiro em cada bucket."""
         total = 0
         for cabeca in self._buckets:
             if cabeca is not None:

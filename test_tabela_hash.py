@@ -13,7 +13,6 @@ class TestTabelaHash(unittest.TestCase):
         self.assertIsNone(self.tabela.buscar(999))
 
     def test_colisao_localiza_os_dois(self):
-        # 101 % 7 == 108 % 7 == 3 (o exemplo do enunciado)
         self.tabela.inserir(101, "Ana")
         self.tabela.inserir(108, "Bruno")
         self.assertEqual(self.tabela.colisoes(), 1)
@@ -27,7 +26,7 @@ class TestTabelaHash(unittest.TestCase):
         self.assertEqual(len(self.tabela), 1)
 
     def test_remover_inicio_e_meio_da_lista(self):
-        for id_ in (3, 10, 17):  # todos caem no bucket 3
+        for id_ in (3, 10, 17):
             self.tabela.inserir(id_, f"P{id_}")
         self.assertEqual(self.tabela.remover(10), "P10")
         self.assertEqual(self.tabela.remover(17), "P17")
