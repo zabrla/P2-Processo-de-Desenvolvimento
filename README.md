@@ -125,3 +125,5 @@ Use uma base vazia. Cadastre, nesta ordem, **Médico A**, **Médico B** e **Méd
 ## Interface de terminal
 
 Execute `python main.py` para usar a interface em memória. Ela inicia com pacientes e três médicos fictícios e usa uma base independente da aplicação web.
+
+Use **10 · Ver estruturas** para inspecionar os heaps de pacientes e de médicos disponíveis. Na chave dos médicos, a ordem de atribuição `0` indica que o profissional ainda não recebeu uma ficha. Use **12 · Cadastrar médico** para gerar um ID e **13 · Consultar médico** para ver registro, situação, total de conclusões e ficha ativa, quando houver.
