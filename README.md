@@ -1,10 +1,8 @@
 # SIGAE WEB
 
-**Universidade de Vassouras · Engenharia de Software**
+Aplicação web para simular a triagem e a operação de uma fila de pronto-atendimento. O SIGAE organiza chamadas por risco clínico, distribui pacientes entre médicos disponíveis e mantém o histórico de atendimentos em SQLite.
 
-Trabalho final de Estrutura de Dados Avançados · 8,0 pontos
-
-O Sistema Inteligente de Gerenciamento de Atendimentos de Emergência é um simulador acadêmico de pronto-atendimento. A aplicação web registra pacientes e médicos clínicos fictícios, organiza a fila pelo risco e atribui cada paciente ao médico disponível com menor carga de atendimentos concluídos. Use dados fictícios.
+Use dados fictícios nas demonstrações.
 
 ## Executar localmente
 
@@ -26,9 +24,9 @@ py -m venv .venv
 .\.venv\Scripts\python.exe -m streamlit run app.py
 ```
 
-Abra o endereço informado no terminal, geralmente `http://localhost:8501`. A aplicação usa Streamlit 1.67.0 e SQLite da biblioteca padrão. Uma base nova começa sem pacientes e sem médicos. Para preparar uma demonstração, cadastre médicos na tela **Médicos** e crie as fichas em **Novo paciente**. A tela **Estruturas** também oferece cenários fictícios enquanto a base estiver sem fichas.
+Abra o endereço informado no terminal, geralmente `http://localhost:8501`. A aplicação usa Streamlit 1.67.0 e SQLite da biblioteca padrão. Uma base nova começa sem pacientes e sem médicos. Para começar, cadastre a equipe em **Médicos** e crie fichas em **Novo paciente**. A tela **Estruturas** permite carregar dados de demonstração enquanto a base estiver sem fichas.
 
-## Operação
+## Funcionalidades
 
 | Tela | O que fazer |
 | --- | --- |
@@ -40,7 +38,7 @@ Abra o endereço informado no terminal, geralmente `http://localhost:8501`. A ap
 | **Atendimentos** | Faça uma chamada automática ou acompanhe as fichas ativas pelo paciente, médico e horário de início. Conclua a ficha ou confirme seu cancelamento. |
 | **Histórico** | Veja conclusões e cancelamentos em ordem decrescente de encerramento. Filtre por médico, inclusive para ver cancelamentos que aconteceram após uma atribuição. |
 | **Chegadas** | Consulte a fila em ordem cronológica de chegada. |
-| **Estruturas** | Inspecione a árvore rubro-negra, os dois heaps e os buckets da hash durante a defesa. |
+| **Estruturas** | Inspecione a árvore rubro-negra, os dois heaps e os buckets da hash e confira a consistência dos índices. |
 
 Em telas de até 640 px, acesse a navegação pelo botão no canto superior esquerdo. As listas usam cartões para facilitar a leitura no celular. Em telas maiores, usam tabelas. Listas com mais de dez fichas têm seletor de página.
 
@@ -50,7 +48,9 @@ Em telas de até 640 px, acesse a navegação pelo botão no canto superior esqu
   <img src="docs/imagens/atendimentos-mobile.png" width="260" alt="Atendimentos em andamento com médico vinculado e horário de início">
 </p>
 
-### Ordem dos pacientes
+## Regras de atendimento
+
+### Ordem da fila
 
 | Risco | Classificação | Senha |
 | --- | --- | --- |
@@ -68,39 +68,39 @@ A chamada usa a raiz do heap de pacientes e a raiz do heap de médicos disponív
 
 Uma sequência de chamadas registra a ordem das atribuições, inclusive quando duas são feitas no mesmo segundo. Um médico fica ocupado até a conclusão ou o cancelamento da ficha. A conclusão soma um ao contador e o cancelamento preserva o contador. Ambas as ações devolvem o médico ao heap de disponíveis. Com todos ocupados, o botão fica indisponível e a próxima ficha permanece na fila.
 
-## Relatório técnico
+## Arquitetura
 
-| Estrutura da equipe | Chave e operações |
+| Índice em memória | Chave e operações |
 | --- | --- |
 | **Árvore rubro-negra** | Indexa a espera por `(horário, ID)`. Implementa inserção, remoção, busca, percurso em ordem, rotações e recoloração. A página **Chegadas** usa o percurso. |
 | **Min-Heap de pacientes** | Seleciona por `(risco, horário, ID)`. Cadastro insere, triagem reposiciona e chamada ou cancelamento removem. |
 | **Min-Heap de médicos** | Guarda apenas disponíveis e seleciona por `(concluídos, última atribuição, ID)`. A chamada extrai a raiz. O encerramento insere de volta com a chave atualizada. |
 | **Tabelas hash** | Uma indexa a fila, outra conserva todas as fichas e a terceira localiza médicos. A dispersão usa o resto da divisão pela capacidade. As colisões usam encadeamento separado. Ao ultrapassar 75% de ocupação, a tabela redimensiona para um número primo maior. |
 
-Os dois heaps usam a mesma implementação binária em vetor e instâncias independentes. O dicionário auxiliar do heap mapeia ID para posição, o que permite localizar um elemento para atualização ou remoção sem varrer o vetor. A seleção da raiz, as trocas, as subidas e as descidas são feitas pelo código da equipe. Dicionários e conjuntos também apoiam a comparação de invariantes na validação. As buscas de fichas e de médicos passam pela hash implementada pela equipe.
+Os dois heaps usam a mesma implementação binária em vetor e instâncias independentes. O dicionário auxiliar do heap mapeia ID para posição, o que permite localizar um elemento para atualização ou remoção sem varrer o vetor. Cada instância mantém a ordem por meio de trocas, subidas e descidas no vetor. Dicionários e conjuntos também apoiam a comparação de invariantes na validação. As consultas de fichas e médicos usam as respectivas tabelas hash.
 
 A árvore, o heap de pacientes e a hash da espera contêm os mesmos IDs aguardando. Ao chamar ou cancelar na fila, esses índices removem a ficha e a hash de fichas preserva seu registro. A validação confere as propriedades da árvore, os dois heaps, as hashes, os vínculos ativos, a carga de cada médico e o histórico.
 
-### SQLite
+## Persistência e configuração
 
 A interface cria `sigae.db` na raiz do projeto. As alterações usam SQL escrito diretamente com `sqlite3` e transações de escrita. A leitura reconstrói os índices da aplicação a partir de um único estado do banco. Atribuições registram médico, horário de início e ordem da chamada. Os totais e a disponibilidade são reconstruídos a partir das fichas persistidas. O banco também restringe cada médico a um atendimento ativo e exige que o vínculo aponte para um médico cadastrado.
 
 Bases anteriores são migradas na primeira abertura. Uma base antiga com cinco níveis conserva os valores. Uma base da versão de duas categorias converte **Prioridade** para nível 3 e **Normal** para nível 5, pois a categoria antiga não identifica o nível original. Consultórios antigos que aparecem nas fichas tornam-se médicos fictícios de legado. O início antigo aparece como **Sem registro** e o desempate entre atribuições migradas usa o ID da ficha como ordem inicial. Novas chamadas registram a sequência real.
 
-Use **Atualizar dados** na barra lateral para consultar mudanças de outra sessão. Para ensaiar a defesa com uma base vazia, escolha um caminho separado com `SIGAE_DB_PATH`.
+Use **Atualizar dados** na barra lateral para consultar mudanças de outra sessão. Para isolar dados de demonstração ou verificação, configure um caminho separado com `SIGAE_DB_PATH`.
 
 ```bash
-SIGAE_DB_PATH=/tmp/sigae-defesa.db .venv/bin/python -m streamlit run app.py
+SIGAE_DB_PATH=/tmp/sigae-demo.db .venv/bin/python -m streamlit run app.py
 ```
 
 No PowerShell:
 
 ```powershell
-$env:SIGAE_DB_PATH = "$env:TEMP\sigae-defesa.db"
+$env:SIGAE_DB_PATH = "$env:TEMP\sigae-demo.db"
 .\.venv\Scripts\python.exe -m streamlit run app.py
 ```
 
-## Roteiro e evidências da defesa
+## Verificação funcional
 
 Use uma base vazia. Cadastre, nesta ordem, **Médico A**, **Médico B** e **Médico C**, com registros fictícios `FICT-A`, `FICT-B` e `FICT-C`. Cadastre os pacientes na ordem da tabela.
 
@@ -122,4 +122,6 @@ Use uma base vazia. Cadastre, nesta ordem, **Médico A**, **Médico B** e **Méd
 | Reclassifique `N-1000` para nível 2 e chame. | A ficha passa a `P-1000` e vai para B. Ao reabrir a base, os totais de A, B e C são 1, 0 e 0 e o histórico contém uma conclusão e três cancelamentos. |
 | Em outra base vazia, carregue **Colisões na hash** em **Estruturas**. Adicione quatro fichas e cancele `N-1000`. | A hash inicia com capacidade 11 e quatro colisões. Após as quatro inserções, alcança capacidade 23. Após a remoção, restam oito fichas e a validação de todos os índices passa. |
 
-O terminal pode ser aberto com `python main.py` para demonstrar as estruturas em memória. Ele inicia com pacientes e três médicos fictícios. A aplicação web é o fluxo de entrega e mantém seus dados em SQLite.
+## Interface de terminal
+
+Execute `python main.py` para usar a interface em memória. Ela inicia com pacientes e três médicos fictícios e usa uma base independente da aplicação web.
