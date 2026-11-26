@@ -71,6 +71,21 @@ class MinHeap:
             self._descer(0)
         return raiz
 
+    def remover(self, id_paciente):
+        if id_paciente not in self.pos:
+            raise KeyError(f"paciente {id_paciente} não está no heap")
+        i = self.pos[id_paciente]
+        removido = self.v[i]
+        ultimo = len(self.v) - 1
+        self._trocar(i, ultimo)
+        self.v.pop()
+        del self.pos[id_paciente]
+        if i < len(self.v):
+            movido = self.v[i].id
+            self._subir(i)
+            self._descer(self.pos[movido])
+        return removido
+
     def alterar_prioridade(self, id_paciente, nova_prioridade):
         self._validar_prioridade(nova_prioridade)
         if id_paciente not in self.pos:
