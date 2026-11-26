@@ -8,8 +8,14 @@ EM_ATENDIMENTO = "Em atendimento"
 CONCLUIDO = "Concluído"
 CANCELADO = "Cancelado"
 
-# Índice = prioridade (a posição 0 não é usada).
-CLASSIFICACOES = ("", "Emergência", "Muito urgente", "Urgente", "Pouco urgente", "Não urgente")
+PRIORIDADE = 1
+NORMAL = 2
+CLASSIFICACOES = {PRIORIDADE: "Prioridade", NORMAL: "Normal"}
+
+
+def senha(id_paciente, prioridade):
+    prefixo = "P" if prioridade == PRIORIDADE else "N"
+    return f"{prefixo}-{id_paciente}"
 
 
 class ErroSIGAE(Exception):
@@ -40,7 +46,7 @@ class Transacao:
         for desfazer in reversed(self._desfazer):
             try:
                 desfazer()
-            except Exception as falha:  # continua desfazendo o resto
+            except Exception as falha:
                 falhas.append(falha)
         if falhas:
             raise ErroIntegridade(
@@ -75,9 +81,13 @@ class Ficha:
     def prioridade(self):
         return self.paciente.prioridade
 
+    @property
+    def senha(self):
+        return senha(self.id, self.prioridade)
+
     def resumo(self):
-        texto = (f"#{self.id} {self.nome} · chegou {self.horario} · "
-                 f"P{self.prioridade} {CLASSIFICACOES[self.prioridade]} · {self.status}")
+        texto = (f"{self.senha} {self.nome} · chegou {self.horario} · "
+                 f"{CLASSIFICACOES[self.prioridade]} · {self.status}")
         if self.consultorio is not None:
             texto += f" (médico {self.consultorio})"
         return texto
@@ -107,15 +117,14 @@ class SIGAE:
         self.limpar()
 
     def limpar(self):
-        self.espera = TabelaHash()      # ID -> Paciente (só quem aguarda)
-        self.arvore = ArvoreRubroNegra()  # (horário, ID) -> Paciente
-        self.heap = MinHeap()           # prioridade, chegada, ID
-        self.fichas = TabelaHash()      # ID -> Ficha (todos que já passaram pelo sistema)
+        self.espera = TabelaHash()
+        self.arvore = ArvoreRubroNegra()
+        self.heap = MinHeap()
+        self.fichas = TabelaHash()
         self.consultorios = [None] * self.num_consultorios
-        self.historico = []             # IDs na ordem em que saíram (concluídos e cancelados)
+        self.historico = []
         self.proximo_id = 1000
 
-    # ---------- cadastro ----------
 
     def cadastrar(self, nome, horario, prioridade, id_paciente=None):
         nome = (nome or "").strip()
@@ -134,7 +143,6 @@ class SIGAE:
         paciente = Paciente(id_paciente, nome, prioridade, float(chegada))
         ficha = Ficha(paciente, horario)
 
-        # Ou entra nas três estruturas (e nas fichas), ou não entra em nenhuma.
         with Transacao() as t:
             t.passo(lambda: self.espera.inserir(id_paciente, paciente),
                     lambda: self.espera.remover(id_paciente))
@@ -149,7 +157,6 @@ class SIGAE:
         return ficha
 
     def _gerar_id(self):
-        # Pula números que já foram usados num cadastro com ID manual.
         while self.fichas.contem(self.proximo_id):
             self.proximo_id += 1
         id_paciente = self.proximo_id
@@ -161,7 +168,6 @@ class SIGAE:
         if not ok:
             raise KeyError(f"registro não encontrado na {estrutura}")
 
-    # ---------- consultas ----------
 
     def localizar(self, id_paciente):
         """Busca só pela Tabela Hash."""
@@ -190,7 +196,6 @@ class SIGAE:
     def concluidos(self):
         return sum(1 for i in self.historico if self.fichas.buscar(i).status == CONCLUIDO)
 
-    # ---------- alterações ----------
 
     def reclassificar(self, id_paciente, nova_prioridade):
         self._checar_prioridade(nova_prioridade)
@@ -247,11 +252,10 @@ class SIGAE:
         self.historico.append(ficha.id)
         return ficha
 
-    # ---------- apoio ----------
 
     def _checar_prioridade(self, prioridade):
-        if not isinstance(prioridade, int) or isinstance(prioridade, bool) or not 1 <= prioridade <= 5:
-            raise ErroSIGAE("A classificação de risco deve ser de 1 a 5.")
+        if not isinstance(prioridade, int) or isinstance(prioridade, bool) or prioridade not in CLASSIFICACOES:
+            raise ErroSIGAE("Escolha Prioridade ou Normal.")
 
     def _checar_consultorio(self, consultorio):
         if not isinstance(consultorio, int) or not 1 <= consultorio <= self.num_consultorios:
@@ -310,7 +314,6 @@ class SIGAE:
                 if objeto is not ficha.paciente:
                     raise AssertionError(f"#{id_paciente}: {nome} aponta para um registro diferente da ficha.")
 
-    # ---------- validação ----------
 
     def validar(self):
         self.arvore.validar_propriedades()
@@ -389,23 +392,21 @@ class SIGAE:
             if i > 0 and self.heap.v[(i - 1) // 2].chave() > paciente.chave():
                 raise AssertionError(f"Heap: #{paciente.id} tem prioridade menor que o pai.")
 
-    # ---------- cenários ----------
 
     CENARIO_PADRAO = (
-        (1000, "Ana Ribeiro", "08:00", 4),
-        (1001, "Bruno Souza", "08:05", 2),
-        (1002, "Carlos Mendes", "08:10", 5),
-        (1003, "Daniela Costa", "08:15", 1),
-        (1004, "Eduardo Silva", "08:20", 3),
+        (1000, "Ana Ribeiro", "08:00", NORMAL),
+        (1001, "Bruno Souza", "08:05", PRIORIDADE),
+        (1002, "Carlos Mendes", "08:10", NORMAL),
+        (1003, "Daniela Costa", "08:15", PRIORIDADE),
+        (1004, "Eduardo Silva", "08:20", PRIORIDADE),
     )
 
-    # Com capacidade 11, todos esses IDs caem no bucket 10.
     CENARIO_COLISAO = (
-        (1000, "Ana Ribeiro", "08:00", 4),
-        (1011, "Bruno Souza", "08:05", 2),
-        (1022, "Carlos Mendes", "08:10", 5),
-        (1033, "Daniela Costa", "08:15", 1),
-        (1044, "Eduardo Silva", "08:20", 3),
+        (1000, "Ana Ribeiro", "08:00", NORMAL),
+        (1011, "Bruno Souza", "08:05", PRIORIDADE),
+        (1022, "Carlos Mendes", "08:10", NORMAL),
+        (1033, "Daniela Costa", "08:15", PRIORIDADE),
+        (1044, "Eduardo Silva", "08:20", PRIORIDADE),
     )
 
     def carregar(self, cenario):

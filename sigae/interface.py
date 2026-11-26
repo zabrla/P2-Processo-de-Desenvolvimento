@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from sigae.estruturas.arvore_rubro_negra import RED
-from sigae.sistema import SIGAE, ErroSIGAE, ErroIntegridade, CLASSIFICACOES
+from sigae.sistema import CLASSIFICACOES, NORMAL, PRIORIDADE, ErroIntegridade, ErroSIGAE, SIGAE, senha
 
 
 def ler_texto(pergunta, padrao=None):
@@ -30,20 +30,20 @@ def ler_inteiro(pergunta, minimo=None, maximo=None, padrao=None, opcional=False)
 
 
 def mostrar_classificacoes():
-    for p in range(1, 6):
-        print(f"  {p} · {CLASSIFICACOES[p]}")
+    for numero, categoria in CLASSIFICACOES.items():
+        print(f"  {numero} · {categoria}")
 
 
 def painel(sistema):
     proximo = sistema.proximo_da_fila()
-    texto_proximo = f"{proximo.nome} · P{proximo.prioridade}" if proximo else "—"
+    texto_proximo = f"{proximo.senha} · {proximo.nome}" if proximo else "—"
     print("=" * 64)
     print("  SIGAE · Central de operações")
     print("=" * 64)
     print(f"  Aguardando: {sistema.aguardando()}    Próximo da fila: {texto_proximo}    "
           f"Concluídos: {sistema.concluidos()}")
     for numero, ficha in enumerate(sistema.em_atendimento(), start=1):
-        situacao = f"#{ficha.id} {ficha.nome} · P{ficha.prioridade}" if ficha else "livre"
+        situacao = f"{ficha.senha} · {ficha.nome}" if ficha else "livre"
         print(f"  Médico {numero}: {situacao}")
     hash_ = sistema.espera
     print(f"  Hash: capacidade {hash_.capacidade()} · carga {hash_.fator_carga():.0%} · "
@@ -61,16 +61,15 @@ MENU = """
 """
 
 
-# ---------- operações ----------
 
 def registrar(sistema):
     nome = ler_texto("Nome do paciente")
     horario = ler_texto("Hora de chegada (HH:MM)", datetime.now().strftime("%H:%M"))
     mostrar_classificacoes()
-    prioridade = ler_inteiro("Classificação de risco", 1, 5, 3)
+    prioridade = ler_inteiro("Classificação", PRIORIDADE, NORMAL, NORMAL)
     id_manual = ler_inteiro("Nº de atendimento (Enter = automático)", 1, opcional=True)
     ficha = sistema.cadastrar(nome, horario, prioridade, id_manual)
-    return f"Entrada registrada: #{ficha.id} {ficha.nome} · {CLASSIFICACOES[ficha.prioridade]}."
+    return f"Entrada registrada: {ficha.senha} {ficha.nome} · {CLASSIFICACOES[ficha.prioridade]}."
 
 
 def consultar(sistema):
@@ -84,17 +83,17 @@ def consultar(sistema):
 def reclassificar(sistema):
     id_paciente = ler_inteiro("Nº de atendimento", 1)
     mostrar_classificacoes()
-    nova = ler_inteiro("Nova classificação", 1, 5)
+    nova = ler_inteiro("Nova classificação", PRIORIDADE, NORMAL)
     ficha, antiga = sistema.reclassificar(id_paciente, nova)
     proximo = sistema.proximo_da_fila()
-    return (f"#{ficha.id} {ficha.nome}: {CLASSIFICACOES[antiga]} → {CLASSIFICACOES[nova]}. "
-            f"Raiz do Heap agora: #{proximo.id} {proximo.nome}.")
+    return (f"{ficha.senha} {ficha.nome}: {CLASSIFICACOES[antiga]} → {CLASSIFICACOES[nova]}. "
+            f"Raiz do Heap agora: {proximo.senha} {proximo.nome}.")
 
 
 def cancelar(sistema):
     id_paciente = ler_inteiro("Nº de atendimento", 1)
     ficha = sistema.cancelar(id_paciente)
-    return f"Atendimento #{ficha.id} cancelado; paciente retirado das três estruturas."
+    return f"Atendimento {ficha.senha} cancelado; paciente retirado das três estruturas."
 
 
 def chamar(sistema):
@@ -104,7 +103,7 @@ def chamar(sistema):
         consultorio = ler_inteiro(f"Médico ({'/'.join(map(str, livres))})",
                                   1, sistema.num_consultorios, padrao=str(livres[0]))
     ficha = sistema.chamar_proximo(consultorio)
-    return f"Médico {ficha.consultorio} chamou #{ficha.id} {ficha.nome} (P{ficha.prioridade}). EM ATENDIMENTO."
+    return f"Médico {ficha.consultorio} chamou {ficha.senha} · {ficha.nome}. EM ATENDIMENTO."
 
 
 def concluir(sistema):
@@ -114,7 +113,7 @@ def concluir(sistema):
         consultorio = ler_inteiro(f"Concluir em qual médico ({'/'.join(map(str, ocupados))})",
                                   1, sistema.num_consultorios)
     ficha = sistema.concluir(consultorio)
-    return f"Médico {ficha.consultorio} concluiu o atendimento de #{ficha.id} {ficha.nome}."
+    return f"Médico {ficha.consultorio} concluiu o atendimento de {ficha.senha} {ficha.nome}."
 
 
 def listar(sistema):
@@ -123,7 +122,7 @@ def listar(sistema):
         return "Fila de espera vazia."
     print("\n  Ordem de chegada (percurso em ordem da Rubro-Negra):")
     for posicao, ficha in enumerate(fichas, start=1):
-        print(f"  {posicao:>2}. {ficha.horario}  #{ficha.id} {ficha.nome} · P{ficha.prioridade}")
+        print(f"  {posicao:>2}. {ficha.horario}  {ficha.senha} · {ficha.nome}")
     return f"{len(fichas)} paciente(s) aguardando."
 
 
@@ -133,7 +132,7 @@ def historico(sistema):
         return "Nenhum encerramento ainda."
     print("\n  Histórico (mais recente primeiro):")
     for ficha in fichas:
-        print(f"  #{ficha.id} {ficha.nome} — {ficha.status}"
+        print(f"  {ficha.senha} {ficha.nome} — {ficha.status}"
               + (f" (médico {ficha.consultorio})" if ficha.consultorio else ""))
     return f"{len(fichas)} registro(s) no histórico."
 
@@ -148,7 +147,6 @@ def desenhar_arvore(arvore, no, prefixo="", lado="raiz", linhas=None):
         return linhas
     cor = "V" if no.cor == RED else "N"
     horario, id_paciente = no.chave
-    # Direita em cima e esquerda embaixo: girando a tela 90°, vira a árvore desenhada.
     ramo = {"raiz": "", "dir": "┌── ", "esq": "└── "}[lado]
     continua_dir = prefixo + ("    " if lado in ("raiz", "dir") else "│   ")
     continua_esq = prefixo + ("    " if lado in ("raiz", "esq") else "│   ")
@@ -170,7 +168,7 @@ def estruturas(sistema):
     inicio, nivel = 0, 0
     while inicio < len(v):
         fim = min(len(v), inicio + 2 ** nivel)
-        print(f"  nível {nivel}: " + "  ".join(f"{p.id}(P{p.prioridade})" for p in v[inicio:fim]))
+        print(f"  nível {nivel}: " + "  ".join(senha(p.id, p.prioridade) for p in v[inicio:fim]))
         inicio, nivel = fim, nivel + 1
 
     print("\n  Tabela Hash da fila de espera:")
