@@ -7,20 +7,11 @@ import streamlit as st
 
 from sigae.banco import BancoSIGAE, ID_MAXIMO
 from sigae.interface import desenhar_arvore
-from sigae.sistema import CLASSIFICACOES, ErroSIGAE, SIGAE
+from sigae.sistema import CLASSIFICACOES, NORMAL, ErroSIGAE, SIGAE, senha
 
 
 def classificacao(prioridade):
-    return f"{prioridade} · {CLASSIFICACOES[prioridade]}"
-
-
-def senha(id_paciente, prioridade):
-    prefixo = "P" if prioridade <= 3 else "N"
-    return f"{prefixo}-{id_paciente}"
-
-
-def senha_da_ficha(ficha):
-    return senha(ficha.id, ficha.prioridade)
+    return CLASSIFICACOES[prioridade]
 
 
 def tabela(fichas):
@@ -39,7 +30,7 @@ def tabela(fichas):
         st.dataframe(
             [
                 {
-                    "Senha": senha_da_ficha(ficha),
+                    "Senha": ficha.senha,
                     "Paciente": ficha.nome,
                     "Chegada": ficha.horario,
                     "Classificação": classificacao(ficha.prioridade),
@@ -58,7 +49,7 @@ def tabela(fichas):
         consultorio = f" · Consultório {ficha.consultorio}" if ficha.consultorio else ""
         cartoes.append(
             '<li class="ficha-mobile">'
-            f'<strong>{senha_da_ficha(ficha)}</strong>'
+            f'<strong>{ficha.senha}</strong>'
             f'<span class="ficha-nome">{escape(ficha.nome)}</span>'
             f'<span>Chegada {escape(ficha.horario)} · {classificacao(ficha.prioridade)}</span>'
             f'<span>{escape(ficha.status)}{consultorio}</span>'
@@ -75,7 +66,7 @@ def executar(operacao, mensagem, *args):
         return False
     else:
         st.session_state["sucesso"] = (
-            f"{mensagem} {senha_da_ficha(ficha)}." if ficha else mensagem
+            f"{mensagem} {ficha.senha}." if ficha else mensagem
         )
         return True
 
@@ -89,7 +80,7 @@ def consultorios(banco, sistema):
             st.subheader(f"Consultório {numero}")
             if ficha:
                 st.markdown(":orange-background[Em atendimento]")
-                st.metric("Senha em atendimento", senha_da_ficha(ficha), label_visibility="collapsed")
+                st.metric("Senha em atendimento", ficha.senha, label_visibility="collapsed")
                 st.html(f'<div class="paciente-em-atendimento">{escape(ficha.nome)}</div>')
                 st.button(
                     "Concluir atendimento",
@@ -101,7 +92,7 @@ def consultorios(banco, sistema):
             else:
                 st.markdown(":green-background[Livre]")
                 st.button(
-                    f"Chamar {senha_da_ficha(proximo)}" if proximo else "Chamar próximo",
+                    f"Chamar {proximo.senha}" if proximo else "Chamar próximo",
                     key=f"chamar_{numero}",
                     on_click=executar,
                     args=(banco.chamar, f"Consultório {numero} chamou", numero,
@@ -122,7 +113,8 @@ def cadastro(banco):
             "Horário de chegada", datetime.now().time(), step=60, key=f"horario_{versao}"
         )
         prioridade = risco.selectbox(
-            "Classificação", range(1, 6), index=2, format_func=classificacao, key=f"risco_{versao}"
+            "Classificação", list(CLASSIFICACOES), index=NORMAL - 1,
+            format_func=classificacao, key=f"risco_{versao}"
         )
         numero = st.text_input("Número manual (opcional)", max_chars=19, key=f"numero_{versao}")
         if not st.form_submit_button("Registrar entrada", type="primary", width="stretch"):
@@ -150,7 +142,7 @@ def consultar(sistema, codigo):
     if not 1 <= id_paciente <= ID_MAXIMO:
         raise ErroSIGAE("Número de atendimento fora do intervalo permitido.")
     ficha = sistema.localizar(id_paciente)
-    if senha_da_ficha(ficha) != f"{prefixo}-{id_paciente}":
+    if ficha.senha != f"{prefixo}-{id_paciente}":
         raise ErroSIGAE("O prefixo informado não corresponde à classificação atual da ficha.")
     return ficha
 
@@ -170,7 +162,7 @@ def fila(banco, fichas):
     if not fichas:
         tabela(fichas)
         return
-    por_senha = {senha_da_ficha(ficha): ficha for ficha in fichas}
+    por_senha = {ficha.senha: ficha for ficha in fichas}
     codigo = st.selectbox(
         "Senha para alterar", list(por_senha), index=None,
         placeholder="Selecione uma senha",
@@ -181,7 +173,7 @@ def fila(banco, fichas):
     ficha = por_senha[codigo]
     with st.form(f"alterar_fila_{codigo}"):
         prioridade = st.selectbox(
-            "Nova classificação", range(1, 6), index=ficha.prioridade - 1,
+            "Nova classificação", list(CLASSIFICACOES), index=ficha.prioridade - 1,
             format_func=classificacao,
         )
         reclassificar = st.form_submit_button("Reclassificar", width="stretch")
@@ -241,7 +233,7 @@ def main():
              "Pacientes", "Chegadas", "Histórico", "Estruturas"],
             key="navegacao",
         )
-        st.caption("P · Prioridades 1 a 3\n\nN · Prioridades 4 e 5")
+        st.caption("P · Prioridade\n\nN · Normal")
         st.button("Atualizar dados", width="stretch")
 
     st.title(pagina)
@@ -254,7 +246,7 @@ def main():
         proximo = sistema.proximo_da_fila()
         with st.container(key="indicadores"):
             chamada, contagem, concluidos = st.columns([2, 1, 1])
-            chamada.metric("Próxima senha", senha_da_ficha(proximo) if proximo else "—", border=True)
+            chamada.metric("Próxima senha", proximo.senha if proximo else "—", border=True)
             contagem.metric("Aguardando", sistema.aguardando(), border=True)
             concluidos.metric("Concluídos", sistema.concluidos(), border=True)
         consultorios(banco, sistema)
