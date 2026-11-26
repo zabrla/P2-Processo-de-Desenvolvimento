@@ -16,6 +16,42 @@ class ErroSIGAE(Exception):
     """Erro de regra de negócio, mostrado para o operador."""
 
 
+class ErroIntegridade(ErroSIGAE):
+    """Uma operação falhou E o desfazer também falhou: as estruturas podem estar divergentes."""
+
+
+class Transacao:
+
+    def __init__(self):
+        self._desfazer = []
+
+    def passo(self, fazer, desfazer):
+        resultado = fazer()
+        self._desfazer.append(desfazer)
+        return resultado
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, tipo, erro, _tb):
+        if erro is None:
+            return False
+        falhas = []
+        for desfazer in reversed(self._desfazer):
+            try:
+                desfazer()
+            except Exception as falha:  # continua desfazendo o resto
+                falhas.append(falha)
+        if falhas:
+            raise ErroIntegridade(
+                f"Falha ao desfazer a operação ({erro}); desfazer falhou em {len(falhas)} passo(s): "
+                f"{'; '.join(map(str, falhas))}. Recarregue o cenário."
+            ) from erro
+        if isinstance(erro, ErroSIGAE):
+            return False  
+        raise ErroSIGAE(f"Operação desfeita, nenhuma estrutura foi alterada ({erro}).") from erro
+
+
 class Ficha:
     """Tudo o que o sistema sabe sobre um paciente, inclusive depois que ele sai da fila."""
 
@@ -59,34 +95,6 @@ def horario_em_minutos(horario):
     return horas * 60 + minutos
 
 
-def remover_do_heap(heap, id_paciente):
-    """Remove um paciente qualquer do heap em O(log n).
-
-    O MinHeap do grupo ainda não tem remover(id). Enquanto não tiver, a remoção é
-    feita aqui usando as operações internas dele: troca com o último, tira o último
-    e reposiciona quem foi para o lugar do removido.
-    """
-    if hasattr(heap, "remover"):
-        return heap.remover(id_paciente)
-
-    if id_paciente not in heap:
-        raise KeyError(f"paciente {id_paciente} não está no heap")
-
-    i = heap.pos[id_paciente]
-    removido = heap.v[i]
-    ultimo = len(heap.v) - 1
-    heap._trocar(i, ultimo)
-    heap.v.pop()
-    del heap.pos[id_paciente]
-
-    if i < len(heap.v):
-        # O elemento que veio do fim pode precisar subir ou descer.
-        movido = heap.v[i].id
-        heap._subir(i)
-        heap._descer(heap.pos[movido])
-    return removido
-
-
 class SIGAE:
     """Integra Tabela Hash, Árvore Rubro-Negra e Min-Heap.
 
@@ -126,19 +134,17 @@ class SIGAE:
         paciente = Paciente(id_paciente, nome, prioridade, float(chegada))
         ficha = Ficha(paciente, horario)
 
-        # Ou entra nas três estruturas, ou não entra em nenhuma.
-        feitos = []
-        try:
-            self.espera.inserir(id_paciente, paciente)
-            feitos.append("hash")
-            self.arvore.inserir(horario, id_paciente, paciente)
-            feitos.append("arvore")
-            self.heap.inserir(paciente)
-            feitos.append("heap")
-            self.fichas.inserir(id_paciente, ficha)
-        except Exception as erro:
-            self._desfazer_cadastro(feitos, paciente, horario)
-            raise ErroSIGAE(f"Cadastro desfeito, nenhuma estrutura foi alterada ({erro}).") from erro
+        # Ou entra nas três estruturas (e nas fichas), ou não entra em nenhuma.
+        with Transacao() as t:
+            t.passo(lambda: self.espera.inserir(id_paciente, paciente),
+                    lambda: self.espera.remover(id_paciente))
+            t.passo(lambda: self.arvore.inserir(horario, id_paciente, paciente),
+                    lambda: self._exigir(self.arvore.remover(horario, id_paciente), "árvore"))
+            t.passo(lambda: self.heap.inserir(paciente),
+                    lambda: self.heap.remover(id_paciente))
+            t.passo(lambda: self.fichas.inserir(id_paciente, ficha),
+                    lambda: self.fichas.remover(id_paciente))
+            self._conferir_paciente(id_paciente, na_fila=True)
 
         return ficha
 
@@ -150,13 +156,10 @@ class SIGAE:
         self.proximo_id += 1
         return id_paciente
 
-    def _desfazer_cadastro(self, feitos, paciente, horario):
-        if "heap" in feitos:
-            remover_do_heap(self.heap, paciente.id)
-        if "arvore" in feitos:
-            self.arvore.remover(horario, paciente.id)
-        if "hash" in feitos:
-            self.espera.remover(paciente.id)
+    @staticmethod
+    def _exigir(ok, estrutura):
+        if not ok:
+            raise KeyError(f"registro não encontrado na {estrutura}")
 
     # ---------- consultas ----------
 
@@ -194,7 +197,10 @@ class SIGAE:
         ficha = self._ficha_em_espera(id_paciente)
         antiga = ficha.prioridade
         if nova_prioridade != antiga:
-            self.heap.alterar_prioridade(id_paciente, nova_prioridade)
+            with Transacao() as t:
+                t.passo(lambda: self.heap.alterar_prioridade(id_paciente, nova_prioridade),
+                        lambda: self.heap.alterar_prioridade(id_paciente, antiga))
+                self._conferir_paciente(id_paciente, na_fila=True)
         return ficha, antiga
 
     def cancelar(self, id_paciente):
@@ -269,22 +275,40 @@ class SIGAE:
         ficha = self._ficha_em_espera(id_paciente)
         paciente, horario = ficha.paciente, ficha.horario
 
-        # Se algo falhar no meio, devolve o paciente às estruturas de onde já saiu.
-        removidos = []
-        try:
-            remover_do_heap(self.heap, id_paciente)
-            removidos.append("heap")
-            if not self.arvore.remover(horario, id_paciente):
-                raise KeyError(f"({horario}, {id_paciente}) não encontrado na árvore")
-            removidos.append("arvore")
-            self.espera.remover(id_paciente)
-        except Exception as erro:
-            if "arvore" in removidos:
-                self.arvore.inserir(horario, id_paciente, paciente)
-            if "heap" in removidos:
-                self.heap.inserir(paciente)
-            raise ErroSIGAE(f"Operação desfeita, as estruturas não foram alteradas ({erro}).") from erro
+        with Transacao() as t:
+            self._conferir_paciente(id_paciente, na_fila=True)
+            t.passo(lambda: self.heap.remover(id_paciente),
+                    lambda: self.heap.inserir(paciente))
+            t.passo(lambda: self._exigir(self.arvore.remover(horario, id_paciente), "árvore"),
+                    lambda: self.arvore.inserir(horario, id_paciente, paciente))
+            t.passo(lambda: self.espera.remover(id_paciente),
+                    lambda: self.espera.inserir(id_paciente, paciente))
+            self._conferir_paciente(id_paciente, na_fila=False)
         return ficha
+
+    def _conferir_paciente(self, id_paciente, na_fila):
+        ficha = self.fichas.buscar(id_paciente)
+        if ficha is None:
+            raise AssertionError(f"#{id_paciente} sem ficha.")
+        no = self.arvore.buscar(ficha.horario, id_paciente)
+        presente = {
+            "Hash": self.espera.contem(id_paciente),
+            "Árvore": no is not None,
+            "Heap": id_paciente in self.heap,
+        }
+        divergentes = [nome for nome, esta in presente.items() if esta != na_fila]
+        if divergentes:
+            estado = "deveria estar" if na_fila else "não deveria estar"
+            raise AssertionError(f"#{id_paciente} {estado} em: {', '.join(divergentes)}.")
+        if na_fila:
+            objetos = {
+                "Hash": self.espera.buscar(id_paciente),
+                "Árvore": no.dado,
+                "Heap": self.heap.v[self.heap.pos[id_paciente]],
+            }
+            for nome, objeto in objetos.items():
+                if objeto is not ficha.paciente:
+                    raise AssertionError(f"#{id_paciente}: {nome} aponta para um registro diferente da ficha.")
 
     # ---------- validação ----------
 
@@ -363,8 +387,10 @@ class SIGAE:
     )
 
     def carregar(self, cenario):
-        self.limpar()
+        novo = SIGAE(self.num_consultorios)
         for id_paciente, nome, horario, prioridade in cenario:
-            self.cadastrar(nome, horario, prioridade, id_paciente)
+            novo.cadastrar(nome, horario, prioridade, id_paciente)
         if cenario:
-            self.proximo_id = max(c[0] for c in cenario) + 1
+            novo.proximo_id = max(c[0] for c in cenario) + 1
+        novo.validar()
+        self.__dict__.update(novo.__dict__)

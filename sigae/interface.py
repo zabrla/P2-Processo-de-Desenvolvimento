@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from sigae.estruturas.arvore_rubro_negra import RED
-from sigae.sistema import SIGAE, ErroSIGAE, CLASSIFICACOES
+from sigae.sistema import SIGAE, ErroSIGAE, ErroIntegridade, CLASSIFICACOES
 
 
 def ler_texto(pergunta, padrao=None):
@@ -217,6 +217,8 @@ def main():
         try:
             mensagem = OPERACOES[opcao](sistema)
             sistema.validar()
+        except ErroIntegridade as erro:
+            mensagem = f"FALHA CRÍTICA: {erro}"
         except ErroSIGAE as erro:
             mensagem = f"ERRO: {erro}"
         except AssertionError as erro:
