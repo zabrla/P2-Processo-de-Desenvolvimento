@@ -1,4 +1,5 @@
 from datetime import datetime
+from html import escape
 from pathlib import Path
 from sqlite3 import Error as ErroSQLite
 
@@ -26,21 +27,44 @@ def tabela(fichas):
     if not fichas:
         st.info("Nenhum atendimento nesta lista.")
         return
-    st.dataframe(
-        [
-            {
-                "Senha": senha_da_ficha(ficha),
-                "Paciente": ficha.nome,
-                "Chegada": ficha.horario,
-                "Classificação": classificacao(ficha.prioridade),
-                "Situação": ficha.status,
-                "Consultório": ficha.consultorio,
-            }
-            for ficha in fichas
-        ],
-        hide_index=True,
-        width="stretch",
-    )
+
+    tamanho = 10
+    if len(fichas) > tamanho:
+        total_paginas = (len(fichas) + tamanho - 1) // tamanho
+        pagina = st.selectbox("Página de resultados", range(1, total_paginas + 1))
+        inicio = (pagina - 1) * tamanho
+        fichas = fichas[inicio : inicio + tamanho]
+
+    with st.container(key="lista_desktop"):
+        st.dataframe(
+            [
+                {
+                    "Senha": senha_da_ficha(ficha),
+                    "Paciente": ficha.nome,
+                    "Chegada": ficha.horario,
+                    "Classificação": classificacao(ficha.prioridade),
+                    "Situação": ficha.status,
+                    "Consultório": ficha.consultorio,
+                }
+                for ficha in fichas
+            ],
+            column_config={"Consultório": st.column_config.NumberColumn(format="%d")},
+            hide_index=True,
+            width="stretch",
+        )
+
+    cartoes = []
+    for ficha in fichas:
+        consultorio = f" · Consultório {ficha.consultorio}" if ficha.consultorio else ""
+        cartoes.append(
+            '<li class="ficha-mobile">'
+            f'<strong>{senha_da_ficha(ficha)}</strong>'
+            f'<span class="ficha-nome">{escape(ficha.nome)}</span>'
+            f'<span>Chegada {escape(ficha.horario)} · {classificacao(ficha.prioridade)}</span>'
+            f'<span>{escape(ficha.status)}{consultorio}</span>'
+            '</li>'
+        )
+    st.html(f'<ul class="fichas-mobile" aria-label="Atendimentos">{"".join(cartoes)}</ul>')
 
 
 def executar(operacao, mensagem, *args):
@@ -48,10 +72,12 @@ def executar(operacao, mensagem, *args):
         ficha = operacao(*args)
     except (ErroSIGAE, ErroSQLite) as erro:
         st.session_state["erro"] = str(erro)
+        return False
     else:
         st.session_state["sucesso"] = (
             f"{mensagem} {senha_da_ficha(ficha)}." if ficha else mensagem
         )
+        return True
 
 
 def consultorios(banco, sistema):
@@ -64,7 +90,7 @@ def consultorios(banco, sistema):
             if ficha:
                 st.markdown(":orange-background[Em atendimento]")
                 st.metric("Senha em atendimento", senha_da_ficha(ficha), label_visibility="collapsed")
-                st.text(ficha.nome)
+                st.html(f'<div class="paciente-em-atendimento">{escape(ficha.nome)}</div>')
                 st.button(
                     "Concluir atendimento",
                     key=f"concluir_{numero}_{ficha.id}",
@@ -79,7 +105,8 @@ def consultorios(banco, sistema):
                     key=f"chamar_{numero}",
                     on_click=executar,
                     args=(banco.chamar, f"Consultório {numero} chamou", numero,
-                          proximo.id if proximo else None),
+                          proximo.id if proximo else None,
+                          proximo.prioridade if proximo else None),
                     disabled=proximo is None,
                     type="primary",
                     width="stretch",
@@ -87,15 +114,18 @@ def consultorios(banco, sistema):
 
 
 def cadastro(banco):
-    with st.form("cadastro"):
-        nome = st.text_input("Nome completo", max_chars=90)
+    versao = st.session_state.get("versao_cadastro", 0)
+    with st.form(f"cadastro_{versao}"):
+        nome = st.text_input("Nome completo", max_chars=90, key=f"nome_{versao}")
         chegada, risco = st.columns(2)
-        horario = chegada.time_input("Horário de chegada", datetime.now().time(), step=60)
-        prioridade = risco.selectbox(
-            "Classificação", range(1, 6), index=2, format_func=classificacao
+        horario = chegada.time_input(
+            "Horário de chegada", datetime.now().time(), step=60, key=f"horario_{versao}"
         )
-        numero = st.text_input("Número manual (opcional)", max_chars=19)
-        if not st.form_submit_button("Registrar entrada", type="primary"):
+        prioridade = risco.selectbox(
+            "Classificação", range(1, 6), index=2, format_func=classificacao, key=f"risco_{versao}"
+        )
+        numero = st.text_input("Número manual (opcional)", max_chars=19, key=f"numero_{versao}")
+        if not st.form_submit_button("Registrar entrada", type="primary", width="stretch"):
             return
 
     try:
@@ -103,8 +133,12 @@ def cadastro(banco):
     except ValueError:
         st.error("Informe um número de atendimento inteiro positivo.")
         return
-    executar(banco.cadastrar, "Entrada registrada com a senha", nome,
-             horario.strftime("%H:%M"), prioridade, id_paciente)
+    gravou = executar(
+        banco.cadastrar, "Entrada registrada com a senha",
+        nome, horario.strftime("%H:%M"), prioridade, id_paciente,
+    )
+    if gravou:
+        st.session_state["versao_cadastro"] = versao + 1
     st.rerun()
 
 
@@ -133,18 +167,34 @@ def pacientes(sistema):
 
 
 def fila(banco, fichas):
-    tabela(fichas)
     if not fichas:
+        tabela(fichas)
         return
-    with st.form("alterar_fila"):
-        ficha = st.selectbox("Senha para alterar", fichas, format_func=senha_da_ficha)
-        prioridade = st.selectbox("Nova classificação", range(1, 6), format_func=classificacao)
-        reclassificar = st.form_submit_button("Reclassificar")
-        cancelar = st.form_submit_button("Cancelar atendimento")
+    por_senha = {senha_da_ficha(ficha): ficha for ficha in fichas}
+    codigo = st.selectbox(
+        "Senha para alterar", list(por_senha), index=None,
+        placeholder="Selecione uma senha",
+    )
+    if codigo is None:
+        tabela(fichas)
+        return
+    ficha = por_senha[codigo]
+    with st.form(f"alterar_fila_{codigo}"):
+        prioridade = st.selectbox(
+            "Nova classificação", range(1, 6), index=ficha.prioridade - 1,
+            format_func=classificacao,
+        )
+        reclassificar = st.form_submit_button("Reclassificar", width="stretch")
+        confirmar = st.checkbox(f"Confirmo o cancelamento de {codigo}")
+        cancelar = st.form_submit_button("Cancelar atendimento", width="stretch")
+    tabela(fichas)
     if reclassificar:
         executar(banco.reclassificar, "Classificação atualizada. Senha", ficha.id, prioridade)
         st.rerun()
     if cancelar:
+        if not confirmar:
+            st.warning(f"Confirme o cancelamento de {codigo} antes de enviar.")
+            return
         executar(banco.cancelar, "Atendimento cancelado", ficha.id)
         st.rerun()
 
@@ -203,9 +253,9 @@ def main():
     if pagina == "Visão geral":
         proximo = sistema.proximo_da_fila()
         with st.container(key="indicadores"):
-            contagem, chamada, concluidos = st.columns(3)
-            contagem.metric("Aguardando", sistema.aguardando(), border=True)
+            chamada, contagem, concluidos = st.columns([2, 1, 1])
             chamada.metric("Próxima senha", senha_da_ficha(proximo) if proximo else "—", border=True)
+            contagem.metric("Aguardando", sistema.aguardando(), border=True)
             concluidos.metric("Concluídos", sistema.concluidos(), border=True)
         consultorios(banco, sistema)
         st.subheader("Próximos atendimentos")
