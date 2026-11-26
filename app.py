@@ -1,4 +1,5 @@
 from datetime import datetime
+from pathlib import Path
 from sqlite3 import Error as ErroSQLite
 
 import streamlit as st
@@ -58,10 +59,11 @@ def consultorios(banco, sistema):
     for numero, (coluna, ficha) in enumerate(
         zip(st.columns(2), sistema.em_atendimento()), start=1
     ):
-        with coluna, st.container(border=True):
+        with coluna, st.container(border=True, key=f"consultorio_{numero}"):
             st.subheader(f"Consultório {numero}")
             if ficha:
-                st.metric("Em atendimento", senha_da_ficha(ficha))
+                st.markdown(":orange-background[Em atendimento]")
+                st.metric("Senha em atendimento", senha_da_ficha(ficha), label_visibility="collapsed")
                 st.text(ficha.nome)
                 st.button(
                     "Concluir atendimento",
@@ -71,7 +73,7 @@ def consultorios(banco, sistema):
                     width="stretch",
                 )
             else:
-                st.metric("Disponibilidade", "Livre")
+                st.markdown(":green-background[Livre]")
                 st.button(
                     f"Chamar {senha_da_ficha(proximo)}" if proximo else "Chamar próximo",
                     key=f"chamar_{numero}",
@@ -173,6 +175,7 @@ def diagnostico(banco, sistema):
 
 def main():
     st.set_page_config(page_title="SIGAE | Central de atendimento", layout="wide")
+    st.html(Path(__file__).with_name("estilo.css"))
     try:
         banco = BancoSIGAE()
         sistema = banco.carregar()
@@ -186,6 +189,7 @@ def main():
             "Navegação",
             ["Visão geral", "Consultórios", "Novo paciente", "Fila de espera",
              "Pacientes", "Chegadas", "Histórico", "Estruturas"],
+            key="navegacao",
         )
         st.caption("P · Prioridades 1 a 3\n\nN · Prioridades 4 e 5")
         st.button("Atualizar dados", width="stretch")
@@ -198,10 +202,11 @@ def main():
 
     if pagina == "Visão geral":
         proximo = sistema.proximo_da_fila()
-        contagem, chamada, concluidos = st.columns(3)
-        contagem.metric("Aguardando", sistema.aguardando())
-        chamada.metric("Próxima senha", senha_da_ficha(proximo) if proximo else "—")
-        concluidos.metric("Concluídos", sistema.concluidos())
+        with st.container(key="indicadores"):
+            contagem, chamada, concluidos = st.columns(3)
+            contagem.metric("Aguardando", sistema.aguardando(), border=True)
+            chamada.metric("Próxima senha", senha_da_ficha(proximo) if proximo else "—", border=True)
+            concluidos.metric("Concluídos", sistema.concluidos(), border=True)
         consultorios(banco, sistema)
         st.subheader("Próximos atendimentos")
         tabela(sorted(sistema.lista_por_chegada(), key=lambda ficha: ficha.paciente.chave())[:5])
