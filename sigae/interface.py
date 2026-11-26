@@ -61,7 +61,6 @@ MENU = """
 """
 
 
-# ---------- operações ----------
 
 def registrar(sistema):
     nome = ler_texto("Nome do paciente")
@@ -148,7 +147,6 @@ def desenhar_arvore(arvore, no, prefixo="", lado="raiz", linhas=None):
         return linhas
     cor = "V" if no.cor == RED else "N"
     horario, id_paciente = no.chave
-    # Direita em cima e esquerda embaixo: girando a tela 90°, vira a árvore desenhada.
     ramo = {"raiz": "", "dir": "┌── ", "esq": "└── "}[lado]
     continua_dir = prefixo + ("    " if lado in ("raiz", "dir") else "│   ")
     continua_esq = prefixo + ("    " if lado in ("raiz", "esq") else "│   ")
