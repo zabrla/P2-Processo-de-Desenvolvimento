@@ -14,8 +14,8 @@ class MinHeap:
 
     @staticmethod
     def _validar_prioridade(prioridade):
-        if not 1 <= prioridade <= 5:
-            raise ValueError("prioridade deve estar entre 1 e 5")
+        if prioridade not in (1, 2):
+            raise ValueError("a classificação deve ser Prioridade (1) ou Normal (2)")
 
     def _antes(self, i, j):
         return self.v[i].chave() < self.v[j].chave()
