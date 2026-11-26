@@ -318,44 +318,66 @@ class SIGAE:
         self.fichas.validar()
         self._validar_heap()
 
-        ids_arvore = []
-        for (horario, id_chave), paciente in self.arvore.percurso_em_ordem():
-            if id_chave != paciente.id:
-                raise AssertionError(f"Árvore: chave ({horario}, {id_chave}) aponta para o paciente #{paciente.id}.")
-            ids_arvore.append(paciente.id)
-        ids_heap = [paciente.id for paciente in self.heap.v]
-        ids_hash = self.espera.chaves()
+        fichas = {}
+        for chave in self.fichas.chaves():
+            ficha = self.fichas.buscar(chave)
+            if ficha.id != chave:
+                raise AssertionError(f"Fichas: chave {chave} guarda a ficha do paciente #{ficha.id}.")
+            if ficha.paciente.chegada != horario_em_minutos(ficha.horario):
+                raise AssertionError(f"#{chave}: horário {ficha.horario} não confere com a chegada do paciente.")
+            fichas[chave] = ficha
 
-        referencia = sorted(ids_hash)
+        def coletar(nome, pares):
+            ids = set()
+            for id_paciente, paciente, horario in pares:
+                if id_paciente in ids:
+                    raise AssertionError(f"{nome}: #{id_paciente} duplicado.")
+                ids.add(id_paciente)
+                ficha = fichas.get(id_paciente)
+                if ficha is None:
+                    raise AssertionError(f"{nome}: #{id_paciente} é um registro órfão (sem ficha).")
+                if paciente is not ficha.paciente:
+                    raise AssertionError(f"{nome}: #{id_paciente} aponta para um registro diferente da ficha.")
+                if horario is not None and horario != ficha.horario:
+                    raise AssertionError(f"{nome}: #{id_paciente} indexado em {horario}, mas chegou {ficha.horario}.")
+            return ids
+
+        ids_hash = coletar("Hash", ((i, self.espera.buscar(i), None) for i in self.espera.chaves()))
+        ids_arvore = coletar("Árvore", ((i, p, h) for (h, i), p in self.arvore.percurso_em_ordem()))
+        ids_heap = coletar("Heap", ((p.id, p, None) for p in self.heap.v))
+
         for nome, ids in (("Árvore", ids_arvore), ("Heap", ids_heap)):
-            if sorted(ids) != referencia:
-                raise AssertionError(f"{nome} e Hash não têm os mesmos pacientes: {sorted(ids)} x {referencia}")
+            if ids != ids_hash:
+                faltando, sobrando = sorted(ids_hash - ids), sorted(ids - ids_hash)
+                raise AssertionError(f"{nome} diverge da Hash — faltando: {faltando}, sobrando: {sobrando}.")
 
-        for id_paciente in referencia:
-            ficha = self.fichas.buscar(id_paciente)
-            if ficha is None or ficha.status != AGUARDANDO:
-                raise AssertionError(f"#{id_paciente} está nos índices mas não consta como aguardando.")
-            if self.espera.buscar(id_paciente) is not ficha.paciente:
-                raise AssertionError(f"#{id_paciente}: Hash e ficha apontam para registros diferentes.")
-
-        em_atendimento = 0
+        atendidos = set()
         for numero, ficha in enumerate(self.consultorios, start=1):
             if ficha is None:
                 continue
-            em_atendimento += 1
+            if ficha.id in atendidos:
+                raise AssertionError(f"#{ficha.id} está em dois médicos ao mesmo tempo.")
+            atendidos.add(ficha.id)
+            if fichas.get(ficha.id) is not ficha:
+                raise AssertionError(f"Médico {numero}: ficha #{ficha.id} não é a registrada no sistema.")
             if ficha.status != EM_ATENDIMENTO or ficha.consultorio != numero:
                 raise AssertionError(f"Médico {numero} com ficha em estado inválido.")
-            if self.espera.contem(ficha.id):
-                raise AssertionError(f"#{ficha.id} está em atendimento e continua na fila.")
 
-        for id_paciente in self.historico:
-            ficha = self.fichas.buscar(id_paciente)
-            if ficha.status not in (CONCLUIDO, CANCELADO) or self.espera.contem(id_paciente):
-                raise AssertionError(f"#{id_paciente} está no histórico com estado inválido.")
+        if len(set(self.historico)) != len(self.historico):
+            raise AssertionError("Histórico com ID duplicado.")
+        encerrados = set(self.historico)
 
-        total = len(referencia) + em_atendimento + len(self.historico)
-        if total != len(self.fichas):
-            raise AssertionError(f"{len(self.fichas)} fichas, mas {total} pacientes localizados nos estados.")
+        for id_paciente, ficha in fichas.items():
+            lugares = [nome for nome, ids in (("fila", ids_hash), ("atendimento", atendidos), ("histórico", encerrados)) if id_paciente in ids]
+            if len(lugares) != 1:
+                raise AssertionError(f"#{id_paciente} encontrado em {lugares or 'nenhum lugar'} (deve ser 1).")
+            esperado = {"fila": (AGUARDANDO,), "atendimento": (EM_ATENDIMENTO,),
+                        "histórico": (CONCLUIDO, CANCELADO)}[lugares[0]]
+            if ficha.status not in esperado:
+                raise AssertionError(f"#{id_paciente} está em {lugares[0]} com status {ficha.status}.")
+
+        if not (ids_hash | atendidos | encerrados) <= fichas.keys():
+            raise AssertionError("Há IDs em uso sem ficha correspondente.")
         return True
 
     def _validar_heap(self):
