@@ -2,7 +2,7 @@
 
 Trabalho final de Estrutura de Dados Avançados (Universidade de Vassouras).
 
-O SIGAE é um sistema de terminal, em Python, que organiza a fila de um pronto-atendimento. Tem dois médicos atendendo ao mesmo tempo e os pacientes são chamados por urgência, não por ordem de chegada.
+O SIGAE organiza a fila de um pronto-atendimento demonstrativo em Python. Dois consultórios compartilham a mesma fila, e a chamada considera a classificação de risco, o horário de chegada e o número da ficha. Há uma interface web em Streamlit com SQLite e um menu de terminal para demonstrar as estruturas de dados.
 
 O sistema precisa responder três perguntas o tempo todo, e cada uma é respondida por uma estrutura feita pelo grupo:
 
@@ -14,9 +14,44 @@ O sistema precisa responder três perguntas o tempo todo, e cada uma é respondi
 
 Nenhuma delas usa `dict`, `heapq` ou biblioteca pronta de árvore para guardar os pacientes.
 
-## Como rodar
+## Como rodar a interface web
 
-Precisa só do Python 3, sem instalar nada. Na pasta do projeto:
+Com Python 3.11 ou superior, execute na raiz do projeto:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python -m streamlit run app.py
+```
+
+No Windows PowerShell, crie o ambiente com `py -m venv .venv` e ative-o com `.\.venv\Scripts\Activate.ps1`. Abra o endereço exibido no terminal, geralmente `http://localhost:8501`.
+
+### Fluxo web
+
+- **Visão geral e consultórios** mostram a próxima senha e o estado dos dois consultórios. Use **Chamar** para iniciar e **Concluir atendimento** para liberar o consultório.
+- **Novo paciente** registra nome, horário, classificação de 1 a 5 e um número opcional. O número automático começa em 1000 e pula os já utilizados.
+- **Fila de espera** mostra a ordem de chamada e permite reclassificar ou cancelar. **Chegadas** exibe a fila na ordem da árvore rubro-negra.
+- **Pacientes** consulta pela senha completa. **Histórico** lista atendimentos concluídos ou cancelados, do mais recente ao mais antigo.
+- **Estruturas** exibe o heap, a árvore e a hash. Em uma base vazia, também permite carregar dados de exemplo.
+
+A senha `P-<id>` identifica as prioridades 1 a 3. A senha `N-<id>` identifica as prioridades 4 e 5. O painel chama pela senha, com menor prioridade numérica primeiro, seguido de horário de chegada e número da ficha. Se a reclassificação cruza a divisão entre P e N, o prefixo muda e o número permanece.
+
+### Banco de dados
+
+A interface web cria `sigae.db` na raiz na primeira abertura. O arquivo começa vazio e preserva as fichas, as classificações, os consultórios ocupados e o histórico entre reinicializações. Cada interação lê os dados do SQLite para reconstruir os índices do SIGAE. Para consultar mudanças de outra sessão, use **Atualizar dados**. As alterações executam em transações SQLite com SQL escrito diretamente em `sigae/banco.py`.
+
+Para usar outra base, defina `SIGAE_DB_PATH` com o caminho do arquivo SQLite. Exemplo no Linux/macOS:
+
+```bash
+SIGAE_DB_PATH=/tmp/sigae-demo.db python -m streamlit run app.py
+```
+
+Use dados fictícios nesta aplicação acadêmica.
+
+## Como rodar o menu de terminal
+
+O menu de terminal roda em memória com o Python 3. Na pasta do projeto:
 
 ```bash
 python main.py
@@ -64,8 +99,11 @@ Se alguma coisa estiver errada, aparece um aviso de inconsistência.
 ## Arquivos
 
 ```
-main.py                          ponto de entrada (é o que você executa)
+app.py                           interface web em Streamlit
+main.py                          ponto de entrada do terminal
+requirements.txt                 dependência da interface web
 sigae/
+├── banco.py                     persistência SQLite da interface web
 ├── interface.py                 menu do terminal
 ├── sistema.py                   integração das três estruturas e regras do atendimento
 ├── modelos/
