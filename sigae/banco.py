@@ -121,11 +121,13 @@ class BancoSIGAE:
     def cancelar(self, id_paciente):
         return self._alterar(lambda sistema: sistema.cancelar(id_paciente))
 
-    def chamar(self, consultorio, id_esperado):
+    def chamar(self, consultorio, id_esperado, prioridade_esperada=None):
         def chamar_proximo(sistema):
             proximo = sistema.proximo_da_fila()
             if proximo is None or proximo.id != id_esperado:
                 raise ErroSIGAE("A fila mudou. Confira o próximo paciente e tente novamente.")
+            if prioridade_esperada is not None and proximo.prioridade != prioridade_esperada:
+                raise ErroSIGAE("A classificação mudou. Confira a próxima senha e tente novamente.")
             return sistema.chamar_proximo(consultorio)
 
         return self._alterar(chamar_proximo)
