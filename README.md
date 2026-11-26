@@ -8,27 +8,21 @@ O sistema precisa responder três perguntas o tempo todo, e cada uma é respondi
 
 | Pergunta | Estrutura | Arquivo |
 |---|---|---|
-| Quem é o próximo a ser atendido? | Min-Heap | `core/heap.py` |
-| Em que ordem os pacientes chegaram? | Árvore Rubro-Negra | `arvore_rubro_negra.py` |
-| Onde está o paciente com este ID? | Tabela Hash | `tabela_hash.py` |
+| Quem é o próximo a ser atendido? | Min-Heap | `sigae/estruturas/heap.py` |
+| Em que ordem os pacientes chegaram? | Árvore Rubro-Negra | `sigae/estruturas/arvore_rubro_negra.py` |
+| Onde está o paciente com este ID? | Tabela Hash | `sigae/estruturas/tabela_hash.py` |
 
 Nenhuma delas usa `dict`, `heapq` ou biblioteca pronta de árvore para guardar os pacientes.
 
 ## Como rodar
 
-Precisa só do Python 3, sem instalar nada.
+Precisa só do Python 3, sem instalar nada. Na pasta do projeto:
 
 ```bash
-python sigae.py
+python main.py
 ```
 
 O sistema já abre com cinco pacientes de exemplo. Para começar do zero, use a opção 11.
-
-Para rodar os testes:
-
-```bash
-python -m unittest -v test_tabela_hash test_sistema
-```
 
 ## O que dá para fazer no menu
 
@@ -70,13 +64,16 @@ Se alguma coisa estiver errada, aparece um aviso de inconsistência.
 ## Arquivos
 
 ```
-sigae.py               menu do terminal (é o que você executa)
-sistema.py             integração das três estruturas e regras do atendimento
-core/heap.py           Min-Heap
-core/paciente.py       dados do paciente
-arvore_rubro_negra.py  Árvore Rubro-Negra
-tabela_hash.py         Tabela Hash
-test_tabela_hash.py    testes da Tabela Hash
-test_sistema.py        testes do sistema integrado
-main.py                exemplo rápido de uso do Heap
+main.py                          ponto de entrada (é o que você executa)
+sigae/
+├── interface.py                 menu do terminal
+├── sistema.py                   integração das três estruturas e regras do atendimento
+├── modelos/
+│   └── paciente.py              dados do paciente
+└── estruturas/
+    ├── heap.py                  Min-Heap
+    ├── arvore_rubro_negra.py    Árvore Rubro-Negra
+    └── tabela_hash.py           Tabela Hash
 ```
+
+A pasta `estruturas` tem só as estruturas de dados, sem nenhuma regra do hospital. Quem conhece o atendimento (médicos, fila, histórico) é o `sistema.py`, e o `interface.py` só conversa com o usuário. Dá para trocar o menu por outra interface sem mexer nas estruturas.

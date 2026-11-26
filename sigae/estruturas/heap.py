@@ -1,4 +1,4 @@
-from core.paciente import Paciente
+from sigae.modelos.paciente import Paciente
 
 class MinHeap:
 

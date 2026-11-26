@@ -1,7 +1,7 @@
-from core.paciente import Paciente
-from core.heap import MinHeap
-from arvore_rubro_negra import ArvoreRubroNegra
-from tabela_hash import TabelaHash
+from sigae.modelos.paciente import Paciente
+from sigae.estruturas.heap import MinHeap
+from sigae.estruturas.arvore_rubro_negra import ArvoreRubroNegra
+from sigae.estruturas.tabela_hash import TabelaHash
 
 AGUARDANDO = "Aguardando"
 EM_ATENDIMENTO = "Em atendimento"

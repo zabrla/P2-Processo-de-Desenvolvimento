@@ -1,7 +1,7 @@
 from datetime import datetime
 
-from arvore_rubro_negra import RED
-from sistema import SIGAE, ErroSIGAE, CLASSIFICACOES
+from sigae.estruturas.arvore_rubro_negra import RED
+from sigae.sistema import SIGAE, ErroSIGAE, CLASSIFICACOES
 
 
 def ler_texto(pergunta, padrao=None):
@@ -225,7 +225,7 @@ def main():
         input("  Enter para continuar...")
 
 
-if __name__ == "__main__":
+def executar():
     try:
         main()
     except (KeyboardInterrupt, EOFError):
