@@ -8,7 +8,14 @@ EM_ATENDIMENTO = "Em atendimento"
 CONCLUIDO = "Concluído"
 CANCELADO = "Cancelado"
 
-CLASSIFICACOES = ("", "Emergência", "Muito urgente", "Urgente", "Pouco urgente", "Não urgente")
+PRIORIDADE = 1
+NORMAL = 2
+CLASSIFICACOES = {PRIORIDADE: "Prioridade", NORMAL: "Normal"}
+
+
+def senha(id_paciente, prioridade):
+    prefixo = "P" if prioridade == PRIORIDADE else "N"
+    return f"{prefixo}-{id_paciente}"
 
 
 class ErroSIGAE(Exception):
@@ -74,9 +81,13 @@ class Ficha:
     def prioridade(self):
         return self.paciente.prioridade
 
+    @property
+    def senha(self):
+        return senha(self.id, self.prioridade)
+
     def resumo(self):
-        texto = (f"#{self.id} {self.nome} · chegou {self.horario} · "
-                 f"P{self.prioridade} {CLASSIFICACOES[self.prioridade]} · {self.status}")
+        texto = (f"{self.senha} {self.nome} · chegou {self.horario} · "
+                 f"{CLASSIFICACOES[self.prioridade]} · {self.status}")
         if self.consultorio is not None:
             texto += f" (médico {self.consultorio})"
         return texto
@@ -243,8 +254,8 @@ class SIGAE:
 
 
     def _checar_prioridade(self, prioridade):
-        if not isinstance(prioridade, int) or isinstance(prioridade, bool) or not 1 <= prioridade <= 5:
-            raise ErroSIGAE("A classificação de risco deve ser de 1 a 5.")
+        if not isinstance(prioridade, int) or isinstance(prioridade, bool) or prioridade not in CLASSIFICACOES:
+            raise ErroSIGAE("Escolha Prioridade ou Normal.")
 
     def _checar_consultorio(self, consultorio):
         if not isinstance(consultorio, int) or not 1 <= consultorio <= self.num_consultorios:
@@ -383,19 +394,19 @@ class SIGAE:
 
 
     CENARIO_PADRAO = (
-        (1000, "Ana Ribeiro", "08:00", 4),
-        (1001, "Bruno Souza", "08:05", 2),
-        (1002, "Carlos Mendes", "08:10", 5),
-        (1003, "Daniela Costa", "08:15", 1),
-        (1004, "Eduardo Silva", "08:20", 3),
+        (1000, "Ana Ribeiro", "08:00", NORMAL),
+        (1001, "Bruno Souza", "08:05", PRIORIDADE),
+        (1002, "Carlos Mendes", "08:10", NORMAL),
+        (1003, "Daniela Costa", "08:15", PRIORIDADE),
+        (1004, "Eduardo Silva", "08:20", PRIORIDADE),
     )
 
     CENARIO_COLISAO = (
-        (1000, "Ana Ribeiro", "08:00", 4),
-        (1011, "Bruno Souza", "08:05", 2),
-        (1022, "Carlos Mendes", "08:10", 5),
-        (1033, "Daniela Costa", "08:15", 1),
-        (1044, "Eduardo Silva", "08:20", 3),
+        (1000, "Ana Ribeiro", "08:00", NORMAL),
+        (1011, "Bruno Souza", "08:05", PRIORIDADE),
+        (1022, "Carlos Mendes", "08:10", NORMAL),
+        (1033, "Daniela Costa", "08:15", PRIORIDADE),
+        (1044, "Eduardo Silva", "08:20", PRIORIDADE),
     )
 
     def carregar(self, cenario):
