@@ -1,4 +1,3 @@
-/* Cartões do painel e destaque da navegação do SIGAE. */
 .st-key-indicadores [data-testid="stMetric"],
 [data-testid="stLayoutWrapper"]:has(> [class*="st-key-consultorio_"]) {
   background: #fff;
@@ -26,4 +25,80 @@
 
 .st-key-navegacao [role="radiogroup"] label:has(input:checked) {
   background: #343fa5;
+}
+
+.stHtml ul.fichas-mobile {
+  display: grid;
+  gap: 0.625rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ficha-mobile {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid #dce3ef;
+  border-radius: 0.875rem;
+  background: #fff;
+  overflow-wrap: anywhere;
+}
+
+.ficha-mobile strong {
+  color: #3945be;
+  font-variant-numeric: tabular-nums;
+}
+
+.ficha-mobile span:not(.ficha-nome) {
+  color: #45536c;
+  font-size: 0.875rem;
+}
+
+.paciente-em-atendimento,
+.st-key-indicadores [data-testid="stMetricValue"] > div,
+[class*="st-key-consultorio_"] [data-testid="stMetricValue"] > div {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  [data-testid="stMainBlockContainer"] {
+    padding-top: 4rem;
+  }
+
+  [data-testid="stMainBlockContainer"] h1 {
+    font-size: 2.125rem;
+  }
+
+  .st-key-lista_desktop {
+    display: none;
+  }
+
+  .st-key-indicadores [data-testid="stHorizontalBlock"] {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .st-key-indicadores [data-testid="stColumn"] {
+    width: auto;
+    min-width: 0;
+  }
+
+  .st-key-indicadores [data-testid="stColumn"]:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .stMain button,
+  .stSidebar button,
+  .st-key-navegacao [role="radiogroup"] label {
+    min-height: 44px;
+  }
+}
+
+@media (min-width: 641px) {
+  .stHtml ul.fichas-mobile {
+    display: none;
+  }
 }
