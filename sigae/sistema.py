@@ -1,3 +1,6 @@
+from dataclasses import dataclass
+from datetime import datetime
+
 from sigae.modelos.paciente import Paciente
 from sigae.estruturas.heap import MinHeap
 from sigae.estruturas.arvore_rubro_negra import ArvoreRubroNegra
@@ -8,13 +11,36 @@ EM_ATENDIMENTO = "Em atendimento"
 CONCLUIDO = "Concluído"
 CANCELADO = "Cancelado"
 
-PRIORIDADE = 1
-NORMAL = 2
-CLASSIFICACOES = {PRIORIDADE: "Prioridade", NORMAL: "Normal"}
+DISPONIVEL = "Disponível"
+NORMAL = 5
+CLASSIFICACOES = {
+    1: "Emergência",
+    2: "Muito urgente",
+    3: "Urgente",
+    4: "Pouco urgente",
+    5: "Não urgente",
+}
+
+
+@dataclass
+class Medico:
+    id: int
+    nome: str
+    registro: str
+    concluidos: int = 0
+    ultima_atribuicao: int = 0
+    ficha_id: int | None = None
+
+    @property
+    def status(self):
+        return DISPONIVEL if self.ficha_id is None else EM_ATENDIMENTO
+
+    def chave(self):
+        return self.concluidos, self.ultima_atribuicao, self.id
 
 
 def senha(id_paciente, prioridade):
-    prefixo = "P" if prioridade == PRIORIDADE else "N"
+    prefixo = "P" if prioridade <= 3 else "N"
     return f"{prefixo}-{id_paciente}"
 
 
@@ -61,13 +87,15 @@ class Transacao:
 class Ficha:
     """Tudo o que o sistema sabe sobre um paciente, inclusive depois que ele sai da fila."""
 
-    __slots__ = ("paciente", "horario", "status", "consultorio")
+    __slots__ = ("paciente", "horario", "status", "medico_id", "inicio", "ordem_chamada")
 
     def __init__(self, paciente, horario):
         self.paciente = paciente
         self.horario = horario
         self.status = AGUARDANDO
-        self.consultorio = None
+        self.medico_id = None
+        self.inicio = None
+        self.ordem_chamada = None
 
     @property
     def id(self):
@@ -88,8 +116,8 @@ class Ficha:
     def resumo(self):
         texto = (f"{self.senha} {self.nome} · chegou {self.horario} · "
                  f"{CLASSIFICACOES[self.prioridade]} · {self.status}")
-        if self.consultorio is not None:
-            texto += f" (médico {self.consultorio})"
+        if self.medico_id is not None:
+            texto += f" (médico {self.medico_id})"
         return texto
 
 
@@ -112,8 +140,7 @@ class SIGAE:
     Quem é chamado, concluído ou cancelado sai dos três e fica só nas fichas.
     """
 
-    def __init__(self, consultorios=2):
-        self.num_consultorios = consultorios
+    def __init__(self):
         self.limpar()
 
     def limpar(self):
@@ -121,7 +148,10 @@ class SIGAE:
         self.arvore = ArvoreRubroNegra()
         self.heap = MinHeap()
         self.fichas = TabelaHash()
-        self.consultorios = [None] * self.num_consultorios
+        self.medicos = TabelaHash()
+        self.heap_medicos = MinHeap()
+        self.proximo_medico_id = 1
+        self.ordem_chamada = 0
         self.historico = []
         self.proximo_id = 1000
 
@@ -184,8 +214,57 @@ class SIGAE:
         paciente = self.heap.topo()
         return None if paciente is None else self.fichas.buscar(paciente.id)
 
+    def cadastrar_medico(self, nome, registro, medico_id=None):
+        nome = nome.strip()
+        registro = registro.strip().upper()
+        if not 1 <= len(nome) <= 90:
+            raise ErroSIGAE("Informe um nome de médico com até 90 caracteres.")
+        if not 1 <= len(registro) <= 24:
+            raise ErroSIGAE("Informe um registro fictício com até 24 caracteres.")
+        if any(medico.registro == registro for medico in self.listar_medicos()):
+            raise ErroSIGAE("Esse registro profissional já está cadastrado.")
+        if medico_id is None:
+            medico_id = self.proximo_medico_id
+        medico = Medico(medico_id, nome, registro)
+        with Transacao() as t:
+            t.passo(lambda: self.medicos.inserir(medico.id, medico),
+                    lambda: self.medicos.remover(medico.id))
+            t.passo(lambda: self.heap_medicos.inserir(medico),
+                    lambda: self.heap_medicos.remover(medico.id))
+        self.proximo_medico_id = max(self.proximo_medico_id, medico.id + 1)
+        return medico
+
+    def localizar_medico(self, medico_id):
+        medico = self.medicos.buscar(medico_id)
+        if medico is None:
+            raise ErroSIGAE(f"Médico #{medico_id} não localizado.")
+        return medico
+
+    def listar_medicos(self):
+        return [self.medicos.buscar(i) for i in sorted(self.medicos.chaves())]
+
     def em_atendimento(self):
-        return list(self.consultorios)
+        return [self.localizar(medico.ficha_id) for medico in self.listar_medicos()
+                if medico.ficha_id is not None]
+
+    def restaurar_vinculos(self):
+        for id_paciente in self.fichas.chaves():
+            ficha = self.fichas.buscar(id_paciente)
+            if ficha.medico_id is None:
+                continue
+            medico = self.localizar_medico(ficha.medico_id)
+            medico.ultima_atribuicao = max(medico.ultima_atribuicao, ficha.ordem_chamada)
+            self.ordem_chamada = max(self.ordem_chamada, ficha.ordem_chamada)
+            if ficha.status == CONCLUIDO:
+                medico.concluidos += 1
+            elif ficha.status == EM_ATENDIMENTO:
+                if medico.ficha_id is not None:
+                    raise ErroIntegridade(f"Médico #{medico.id} possui duas fichas ativas.")
+                medico.ficha_id = ficha.id
+        self.heap_medicos = MinHeap()
+        for medico in self.listar_medicos():
+            if medico.ficha_id is None:
+                self.heap_medicos.inserir(medico)
 
     def fichas_do_historico(self):
         return [self.fichas.buscar(i) for i in reversed(self.historico)]
@@ -208,64 +287,66 @@ class SIGAE:
                 self._conferir_paciente(id_paciente, na_fila=True)
         return ficha, antiga
 
-    def cancelar(self, id_paciente):
-        ficha = self._retirar_da_espera(id_paciente)
-        ficha.status = CANCELADO
-        self.historico.append(ficha.id)
-        return ficha
+    def cancelar(self, id_paciente, situacao_esperada=None):
+        ficha = self.localizar(id_paciente)
+        if situacao_esperada is not None and ficha.status != situacao_esperada:
+            raise ErroSIGAE("A situação da ficha mudou. Confira os dados antes de cancelar.")
+        if ficha.status == AGUARDANDO:
+            self._retirar_da_espera(id_paciente)
+            ficha.status = CANCELADO
+            self.historico.append(ficha.id)
+            return ficha
+        if ficha.status == EM_ATENDIMENTO:
+            return self._encerrar(ficha, CANCELADO)
+        raise ErroSIGAE(f"{ficha.senha} já foi encerrada.")
 
-    def chamar_proximo(self, consultorio=None):
-        if consultorio is None:
-            consultorio = self._primeiro_consultorio_livre()
-            if consultorio is None:
-                raise ErroSIGAE("Os dois médicos estão em atendimento. Conclua um atendimento antes de chamar.")
-        else:
-            self._checar_consultorio(consultorio)
-            if self.consultorios[consultorio - 1] is not None:
-                raise ErroSIGAE(f"O médico {consultorio} já está em atendimento.")
-
+    def chamar_proximo(self):
         proximo = self.heap.topo()
         if proximo is None:
             raise ErroSIGAE("Não há pacientes aguardando.")
+        medico = self.heap_medicos.topo()
+        if medico is None:
+            raise ErroSIGAE("Nenhum médico disponível. O paciente permanece na fila.")
 
-        ficha = self._retirar_da_espera(proximo.id)
+        inicio = datetime.now().astimezone().isoformat(timespec="seconds")
+        with Transacao() as t:
+            t.passo(self.heap_medicos.extrair_min, lambda: self.heap_medicos.inserir(medico))
+            ficha = self._retirar_da_espera(proximo.id)
+        self.ordem_chamada += 1
         ficha.status = EM_ATENDIMENTO
-        ficha.consultorio = consultorio
-        self.consultorios[consultorio - 1] = ficha
+        ficha.medico_id = medico.id
+        ficha.ordem_chamada = self.ordem_chamada
+        ficha.inicio = inicio
+        medico.ultima_atribuicao = self.ordem_chamada
+        medico.ficha_id = ficha.id
         return ficha
 
-    def concluir(self, consultorio=None):
-        ocupados = [i + 1 for i, f in enumerate(self.consultorios) if f is not None]
-        if not ocupados:
-            raise ErroSIGAE("Nenhum paciente está em atendimento.")
-        if consultorio is None:
-            if len(ocupados) > 1:
-                raise ErroSIGAE("Os dois médicos estão em atendimento; informe qual deve concluir.")
-            consultorio = ocupados[0]
-        self._checar_consultorio(consultorio)
+    def concluir(self, id_paciente):
+        ficha = self.localizar(id_paciente)
+        if ficha.status != EM_ATENDIMENTO:
+            raise ErroSIGAE(f"{ficha.senha} não está em atendimento.")
+        return self._encerrar(ficha, CONCLUIDO)
 
-        ficha = self.consultorios[consultorio - 1]
-        if ficha is None:
-            raise ErroSIGAE(f"O médico {consultorio} está livre.")
-        ficha.status = CONCLUIDO
-        self.consultorios[consultorio - 1] = None
+    def _encerrar(self, ficha, status):
+        medico = self.localizar_medico(ficha.medico_id)
+        if medico.ficha_id != ficha.id:
+            raise ErroIntegridade("O vínculo do médico não corresponde à ficha.")
+        concluidos = medico.concluidos
+        if status == CONCLUIDO:
+            medico.concluidos += 1
+        try:
+            self.heap_medicos.inserir(medico)
+        except Exception:
+            medico.concluidos = concluidos
+            raise
+        medico.ficha_id = None
+        ficha.status = status
         self.historico.append(ficha.id)
         return ficha
 
-
     def _checar_prioridade(self, prioridade):
         if not isinstance(prioridade, int) or isinstance(prioridade, bool) or prioridade not in CLASSIFICACOES:
-            raise ErroSIGAE("Escolha Prioridade ou Normal.")
-
-    def _checar_consultorio(self, consultorio):
-        if not isinstance(consultorio, int) or not 1 <= consultorio <= self.num_consultorios:
-            raise ErroSIGAE(f"Médico deve ser de 1 a {self.num_consultorios}.")
-
-    def _primeiro_consultorio_livre(self):
-        for i, ficha in enumerate(self.consultorios):
-            if ficha is None:
-                return i + 1
-        return None
+            raise ErroSIGAE("Escolha uma classificação de risco de 1 a 5.")
 
     def _ficha_em_espera(self, id_paciente):
         if not self.espera.contem(id_paciente):
@@ -319,7 +400,9 @@ class SIGAE:
         self.arvore.validar_propriedades()
         self.espera.validar()
         self.fichas.validar()
-        self._validar_heap()
+        self._validar_heap(self.heap)
+        self._validar_heap(self.heap_medicos)
+        self.medicos.validar()
 
         fichas = {}
         for chave in self.fichas.chaves():
@@ -354,17 +437,7 @@ class SIGAE:
                 faltando, sobrando = sorted(ids_hash - ids), sorted(ids - ids_hash)
                 raise AssertionError(f"{nome} diverge da Hash — faltando: {faltando}, sobrando: {sobrando}.")
 
-        atendidos = set()
-        for numero, ficha in enumerate(self.consultorios, start=1):
-            if ficha is None:
-                continue
-            if ficha.id in atendidos:
-                raise AssertionError(f"#{ficha.id} está em dois médicos ao mesmo tempo.")
-            atendidos.add(ficha.id)
-            if fichas.get(ficha.id) is not ficha:
-                raise AssertionError(f"Médico {numero}: ficha #{ficha.id} não é a registrada no sistema.")
-            if ficha.status != EM_ATENDIMENTO or ficha.consultorio != numero:
-                raise AssertionError(f"Médico {numero} com ficha em estado inválido.")
+        atendidos = self._validar_medicos(fichas)
 
         if len(set(self.historico)) != len(self.historico):
             raise AssertionError("Histórico com ID duplicado.")
@@ -383,34 +456,73 @@ class SIGAE:
             raise AssertionError("Há IDs em uso sem ficha correspondente.")
         return True
 
-    def _validar_heap(self):
-        if len(self.heap.pos) != len(self.heap.v):
+    def _validar_medicos(self, fichas):
+        concluidos = {}
+        ultimas = {}
+        ordens = set()
+        for ficha in fichas.values():
+            if ficha.medico_id is None:
+                if ficha.status in (EM_ATENDIMENTO, CONCLUIDO) or ficha.ordem_chamada is not None:
+                    raise AssertionError("Ficha sem vínculo médico válido.")
+                continue
+            if (not self.medicos.contem(ficha.medico_id) or ficha.status == AGUARDANDO
+                    or ficha.ordem_chamada is None or ficha.ordem_chamada in ordens):
+                raise AssertionError("Atribuição médica inválida ou duplicada.")
+            ordens.add(ficha.ordem_chamada)
+            ultimas[ficha.medico_id] = max(ultimas.get(ficha.medico_id, 0), ficha.ordem_chamada)
+            if ficha.status == CONCLUIDO:
+                concluidos[ficha.medico_id] = concluidos.get(ficha.medico_id, 0) + 1
+
+        atendidos = set()
+        disponiveis = set()
+        for medico in self.listar_medicos():
+            if (medico.concluidos != concluidos.get(medico.id, 0)
+                    or medico.ultima_atribuicao != ultimas.get(medico.id, 0)):
+                raise AssertionError(f"Carga inconsistente para o médico #{medico.id}.")
+            if medico.ficha_id is None:
+                disponiveis.add(medico.id)
+                continue
+            ficha = fichas.get(medico.ficha_id)
+            if ficha is None or ficha.status != EM_ATENDIMENTO or ficha.medico_id != medico.id:
+                raise AssertionError(f"Vínculo inválido para o médico #{medico.id}.")
+            atendidos.add(ficha.id)
+        if disponiveis != set(self.heap_medicos.pos) or any(
+            self.medicos.buscar(medico.id) is not medico for medico in self.heap_medicos.v
+        ):
+            raise AssertionError("O Heap de médicos diverge dos profissionais disponíveis.")
+        if self.ordem_chamada != max(ordens, default=0):
+            raise AssertionError("A sequência de chamadas está inconsistente.")
+        return atendidos
+
+    @staticmethod
+    def _validar_heap(heap):
+        if len(heap.pos) != len(heap.v):
             raise AssertionError("Heap: mapa de posições com tamanho diferente do vetor.")
-        for i, paciente in enumerate(self.heap.v):
-            if self.heap.pos.get(paciente.id) != i:
-                raise AssertionError(f"Heap: posição do paciente #{paciente.id} registrada errada.")
-            if i > 0 and self.heap.v[(i - 1) // 2].chave() > paciente.chave():
-                raise AssertionError(f"Heap: #{paciente.id} tem prioridade menor que o pai.")
+        for i, elemento in enumerate(heap.v):
+            if heap.pos.get(elemento.id) != i:
+                raise AssertionError(f"Heap: posição do elemento #{elemento.id} registrada errada.")
+            if i > 0 and heap.v[(i - 1) // 2].chave() > elemento.chave():
+                raise AssertionError(f"Heap: #{elemento.id} tem prioridade menor que o pai.")
 
 
     CENARIO_PADRAO = (
-        (1000, "Ana Ribeiro", "08:00", NORMAL),
-        (1001, "Bruno Souza", "08:05", PRIORIDADE),
-        (1002, "Carlos Mendes", "08:10", NORMAL),
-        (1003, "Daniela Costa", "08:15", PRIORIDADE),
-        (1004, "Eduardo Silva", "08:20", PRIORIDADE),
+        (1000, "Ana Ribeiro", "08:00", 4),
+        (1001, "Bruno Souza", "08:05", 2),
+        (1002, "Carlos Mendes", "08:10", 5),
+        (1003, "Daniela Costa", "08:15", 1),
+        (1004, "Eduardo Silva", "08:20", 3),
     )
 
     CENARIO_COLISAO = (
-        (1000, "Ana Ribeiro", "08:00", NORMAL),
-        (1011, "Bruno Souza", "08:05", PRIORIDADE),
-        (1022, "Carlos Mendes", "08:10", NORMAL),
-        (1033, "Daniela Costa", "08:15", PRIORIDADE),
-        (1044, "Eduardo Silva", "08:20", PRIORIDADE),
+        (1000, "Ana Ribeiro", "08:00", 4),
+        (1011, "Bruno Souza", "08:05", 2),
+        (1022, "Carlos Mendes", "08:10", 5),
+        (1033, "Daniela Costa", "08:15", 1),
+        (1044, "Eduardo Silva", "08:20", 3),
     )
 
     def carregar(self, cenario):
-        novo = SIGAE(self.num_consultorios)
+        novo = SIGAE()
         for id_paciente, nome, horario, prioridade in cenario:
             novo.cadastrar(nome, horario, prioridade, id_paciente)
         if cenario:

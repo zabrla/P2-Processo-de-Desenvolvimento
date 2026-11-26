@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from sigae.estruturas.arvore_rubro_negra import RED
-from sigae.sistema import CLASSIFICACOES, NORMAL, PRIORIDADE, ErroIntegridade, ErroSIGAE, SIGAE, senha
+from sigae.sistema import CLASSIFICACOES, NORMAL, ErroIntegridade, ErroSIGAE, SIGAE, senha
 
 
 def ler_texto(pergunta, padrao=None):
@@ -42,9 +42,9 @@ def painel(sistema):
     print("=" * 64)
     print(f"  Aguardando: {sistema.aguardando()}    Próximo da fila: {texto_proximo}    "
           f"Concluídos: {sistema.concluidos()}")
-    for numero, ficha in enumerate(sistema.em_atendimento(), start=1):
-        situacao = f"{ficha.senha} · {ficha.nome}" if ficha else "livre"
-        print(f"  Médico {numero}: {situacao}")
+    for medico in sistema.listar_medicos():
+        situacao = sistema.localizar(medico.ficha_id).senha if medico.ficha_id else medico.status
+        print(f"  Médico {medico.id} · {medico.nome}: {situacao} ({medico.concluidos} concluídos)")
     hash_ = sistema.espera
     print(f"  Hash: capacidade {hash_.capacidade()} · carga {hash_.fator_carga():.0%} · "
           f"colisões {hash_.colisoes()}")
@@ -53,11 +53,12 @@ def painel(sistema):
 
 MENU = """
    1. Registrar entrada              7. Concluir atendimento
-   2. Consultar ID                   8. Histórico
-   3. Reclassificar                  9. Validar índices
-   4. Cancelar                      10. Ver estruturas
-   5. Lista por chegada             11. Carregar cenário
-   6. Chamar próximo da fila         0. Sair
+   2. Consultar ID                    8. Histórico
+   3. Reclassificar                   9. Validar índices
+   4. Cancelar                       10. Ver estruturas
+   5. Lista por chegada              11. Carregar cenário
+   6. Chamar próximo da fila         12. Cadastrar médico
+   0. Sair                          13. Consultar médico
 """
 
 
@@ -66,9 +67,8 @@ def registrar(sistema):
     nome = ler_texto("Nome do paciente")
     horario = ler_texto("Hora de chegada (HH:MM)", datetime.now().strftime("%H:%M"))
     mostrar_classificacoes()
-    prioridade = ler_inteiro("Classificação", PRIORIDADE, NORMAL, NORMAL)
-    id_manual = ler_inteiro("Nº de atendimento (Enter = automático)", 1, opcional=True)
-    ficha = sistema.cadastrar(nome, horario, prioridade, id_manual)
+    prioridade = ler_inteiro("Classificação", 1, NORMAL, NORMAL)
+    ficha = sistema.cadastrar(nome, horario, prioridade)
     return f"Entrada registrada: {ficha.senha} {ficha.nome} · {CLASSIFICACOES[ficha.prioridade]}."
 
 
@@ -83,7 +83,7 @@ def consultar(sistema):
 def reclassificar(sistema):
     id_paciente = ler_inteiro("Nº de atendimento", 1)
     mostrar_classificacoes()
-    nova = ler_inteiro("Nova classificação", PRIORIDADE, NORMAL)
+    nova = ler_inteiro("Nova classificação", 1, NORMAL)
     ficha, antiga = sistema.reclassificar(id_paciente, nova)
     proximo = sistema.proximo_da_fila()
     return (f"{ficha.senha} {ficha.nome}: {CLASSIFICACOES[antiga]} → {CLASSIFICACOES[nova]}. "
@@ -93,27 +93,22 @@ def reclassificar(sistema):
 def cancelar(sistema):
     id_paciente = ler_inteiro("Nº de atendimento", 1)
     ficha = sistema.cancelar(id_paciente)
-    return f"Atendimento {ficha.senha} cancelado; paciente retirado das três estruturas."
+    return f"Atendimento {ficha.senha} cancelado; encerramento registrado."
 
 
 def chamar(sistema):
-    livres = [i + 1 for i, f in enumerate(sistema.em_atendimento()) if f is None]
-    consultorio = None
-    if len(livres) > 1:
-        consultorio = ler_inteiro(f"Médico ({'/'.join(map(str, livres))})",
-                                  1, sistema.num_consultorios, padrao=str(livres[0]))
-    ficha = sistema.chamar_proximo(consultorio)
-    return f"Médico {ficha.consultorio} chamou {ficha.senha} · {ficha.nome}. EM ATENDIMENTO."
+    ficha = sistema.chamar_proximo()
+    medico = sistema.localizar_medico(ficha.medico_id)
+    return f"{medico.nome} chamou {ficha.senha} · {ficha.nome}."
 
 
 def concluir(sistema):
-    ocupados = [i + 1 for i, f in enumerate(sistema.em_atendimento()) if f is not None]
-    consultorio = None
-    if len(ocupados) > 1:
-        consultorio = ler_inteiro(f"Concluir em qual médico ({'/'.join(map(str, ocupados))})",
-                                  1, sistema.num_consultorios)
-    ficha = sistema.concluir(consultorio)
-    return f"Médico {ficha.consultorio} concluiu o atendimento de {ficha.senha} {ficha.nome}."
+    ocupados = sistema.em_atendimento()
+    if not ocupados:
+        raise ErroSIGAE("Nenhum paciente está em atendimento.")
+    id_paciente = ocupados[0].id if len(ocupados) == 1 else ler_inteiro("Nº de atendimento", 1)
+    ficha = sistema.concluir(id_paciente)
+    return f"Médico {ficha.medico_id} concluiu o atendimento de {ficha.senha} {ficha.nome}."
 
 
 def listar(sistema):
@@ -133,13 +128,32 @@ def historico(sistema):
     print("\n  Histórico (mais recente primeiro):")
     for ficha in fichas:
         print(f"  {ficha.senha} {ficha.nome} — {ficha.status}"
-              + (f" (médico {ficha.consultorio})" if ficha.consultorio else ""))
+              + (f" (médico {ficha.medico_id})" if ficha.medico_id else ""))
     return f"{len(fichas)} registro(s) no histórico."
+
+
+def cadastrar_medico(sistema):
+    nome = ler_texto("Nome do médico", "")
+    registro = ler_texto("Registro profissional fictício", "")
+    medico = sistema.cadastrar_medico(nome, registro)
+    return f"Médico #{medico.id} cadastrado: {medico.nome} · {medico.registro}."
+
+
+def consultar_medico(sistema):
+    medico = sistema.localizar_medico(ler_inteiro("ID do médico", 1))
+    resumo = (
+        f"Médico #{medico.id} · {medico.nome} · {medico.registro} · "
+        f"{medico.status} · {medico.concluidos} atendimento(s) concluído(s)"
+    )
+    if medico.ficha_id is not None:
+        ficha = sistema.localizar(medico.ficha_id)
+        resumo += f" · Ficha {ficha.senha}"
+    return resumo
 
 
 def validar(sistema):
     sistema.validar()
-    return "Validação concluída: árvore, Heap, Hash e estados dos pacientes consistentes. ✓"
+    return "Árvore, heaps, hashes e vínculos de atendimento validados."
 
 
 def desenhar_arvore(arvore, no, prefixo="", lado="raiz", linhas=None):
@@ -161,20 +175,33 @@ def estruturas(sistema):
     linhas = desenhar_arvore(sistema.arvore, sistema.arvore.raiz, linhas=[])
     print("\n".join(linhas) if linhas else "  (vazia)")
 
-    print("\n  Min-Heap por nível (raiz = próximo a ser chamado):")
-    v = sistema.heap.v
-    if not v:
-        print("  (vazio)")
-    inicio, nivel = 0, 0
-    while inicio < len(v):
-        fim = min(len(v), inicio + 2 ** nivel)
-        print(f"  nível {nivel}: " + "  ".join(senha(p.id, p.prioridade) for p in v[inicio:fim]))
-        inicio, nivel = fim, nivel + 1
+    print("\n  Heap de pacientes (raiz = próxima senha):")
+    exibir_niveis(sistema.heap.v, lambda paciente: senha(paciente.id, paciente.prioridade))
+
+    print("\n  Heap de médicos disponíveis (concluídos, ordem da última atribuição, ID):")
+    exibir_niveis(sistema.heap_medicos.v, lambda medico: f"#{medico.id} {medico.nome} {medico.chave()}")
 
     print("\n  Tabela Hash da fila de espera:")
     for linha in sistema.espera.exibir().split("\n"):
         print("  " + linha)
     return "Estruturas exibidas."
+
+
+def exibir_niveis(elementos, formatar):
+    if not elementos:
+        print("  (vazio)")
+        return
+    inicio, nivel = 0, 0
+    while inicio < len(elementos):
+        fim = min(len(elementos), inicio + 2 ** nivel)
+        valores = "  ".join(formatar(elemento) for elemento in elementos[inicio:fim])
+        print(f"  nível {nivel}: {valores}")
+        inicio, nivel = fim, nivel + 1
+
+
+def cadastrar_equipe_exemplo(sistema):
+    for letra in "ABC":
+        sistema.cadastrar_medico(f"Médico {letra}", f"FICT-{letra}")
 
 
 def carregar(sistema):
@@ -184,23 +211,28 @@ def carregar(sistema):
     opcao = ler_inteiro("Cenário", 1, 3)
     if opcao == 1:
         sistema.carregar(SIGAE.CENARIO_PADRAO)
+        cadastrar_equipe_exemplo(sistema)
         return "Cenário restaurado: cinco pacientes aguardando, médicos livres."
     if opcao == 2:
         sistema.carregar(SIGAE.CENARIO_COLISAO)
+        cadastrar_equipe_exemplo(sistema)
         return "Cenário de colisões: IDs 1000, 1011, 1022, 1033 e 1044 caem no mesmo bucket."
     sistema.limpar()
-    return "Sistema vazio."
+    cadastrar_equipe_exemplo(sistema)
+    return "Fila vazia e equipe de exemplo disponível."
 
 
 OPERACOES = {
     1: registrar, 2: consultar, 3: reclassificar, 4: cancelar, 5: listar, 6: chamar,
     7: concluir, 8: historico, 9: validar, 10: estruturas, 11: carregar,
+    12: cadastrar_medico, 13: consultar_medico,
 }
 
 
 def main():
-    sistema = SIGAE(consultorios=2)
+    sistema = SIGAE()
     sistema.carregar(SIGAE.CENARIO_PADRAO)
+    cadastrar_equipe_exemplo(sistema)
     mensagem = "Cenário inicial carregado: cinco pacientes aguardando."
 
     while True:
@@ -208,7 +240,7 @@ def main():
         painel(sistema)
         print(f"  Último registro: {mensagem}")
         print(MENU)
-        opcao = ler_inteiro("Opção", 0, 11)
+        opcao = ler_inteiro("Opção", 0, max(OPERACOES))
         if opcao == 0:
             print("Até logo.")
             break
