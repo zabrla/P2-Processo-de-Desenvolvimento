@@ -25,27 +25,55 @@ class BancoSIGAE:
     def __init__(self, caminho=None):
         self.caminho = caminho or os.environ.get("SIGAE_DB_PATH") or BANCO_PADRAO
         with self._conectar() as conexao:
-            conexao.execute("""
-                CREATE TABLE IF NOT EXISTS fichas (
-                    id INTEGER PRIMARY KEY CHECK (id > 0),
-                    nome TEXT NOT NULL CHECK (length(nome) BETWEEN 2 AND 90),
-                    horario TEXT NOT NULL,
-                    prioridade INTEGER NOT NULL CHECK (prioridade BETWEEN 1 AND 5),
-                    status TEXT NOT NULL,
-                    consultorio INTEGER CHECK (consultorio IN (1, 2)),
-                    ordem_encerramento INTEGER UNIQUE CHECK (ordem_encerramento > 0),
-                    CHECK (
-                        (status = 'Aguardando' AND consultorio IS NULL AND ordem_encerramento IS NULL)
-                        OR (status = 'Em atendimento' AND consultorio IS NOT NULL AND ordem_encerramento IS NULL)
-                        OR (status = 'Concluído' AND consultorio IS NOT NULL AND ordem_encerramento IS NOT NULL)
-                        OR (status = 'Cancelado' AND consultorio IS NULL AND ordem_encerramento IS NOT NULL)
-                    )
+            versao = conexao.execute("PRAGMA user_version").fetchone()[0]
+        if versao == 0:
+            with self._conectar(escrita=True) as conexao:
+                if conexao.execute("PRAGMA user_version").fetchone()[0] == 0:
+                    self._migrar(conexao)
+        elif versao != 1:
+            raise ErroSIGAE(f"Versão de banco incompatível: {versao}.")
+
+    @staticmethod
+    def _migrar(conexao):
+        legado = conexao.execute(
+            "SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'fichas'"
+        ).fetchone()
+        if legado:
+            conexao.execute("ALTER TABLE fichas RENAME TO fichas_legado")
+
+        conexao.execute("""
+            CREATE TABLE fichas (
+                id INTEGER PRIMARY KEY CHECK (id > 0),
+                nome TEXT NOT NULL CHECK (length(nome) BETWEEN 2 AND 90),
+                horario TEXT NOT NULL,
+                prioridade INTEGER NOT NULL CHECK (prioridade IN (1, 2)),
+                status TEXT NOT NULL,
+                consultorio INTEGER CHECK (consultorio IN (1, 2)),
+                ordem_encerramento INTEGER UNIQUE CHECK (ordem_encerramento > 0),
+                CHECK (
+                    (status = 'Aguardando' AND consultorio IS NULL AND ordem_encerramento IS NULL)
+                    OR (status = 'Em atendimento' AND consultorio IS NOT NULL AND ordem_encerramento IS NULL)
+                    OR (status = 'Concluído' AND consultorio IS NOT NULL AND ordem_encerramento IS NOT NULL)
+                    OR (status = 'Cancelado' AND consultorio IS NULL AND ordem_encerramento IS NOT NULL)
                 )
-            """)
+            )
+        """)
+
+        if legado:
             conexao.execute("""
-                CREATE UNIQUE INDEX IF NOT EXISTS consultorio_ocupado
-                ON fichas(consultorio) WHERE status = 'Em atendimento'
+                INSERT INTO fichas
+                    (id, nome, horario, prioridade, status, consultorio, ordem_encerramento)
+                SELECT id, nome, horario, CASE WHEN prioridade <= 3 THEN 1 ELSE 2 END,
+                       status, consultorio, ordem_encerramento
+                FROM fichas_legado
             """)
+            conexao.execute("DROP TABLE fichas_legado")
+
+        conexao.execute("""
+            CREATE UNIQUE INDEX consultorio_ocupado
+            ON fichas(consultorio) WHERE status = 'Em atendimento'
+        """)
+        conexao.execute("PRAGMA user_version = 1")
 
     @contextmanager
     def _conectar(self, escrita=False):
