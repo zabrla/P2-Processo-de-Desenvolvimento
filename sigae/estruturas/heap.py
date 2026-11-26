@@ -1,5 +1,3 @@
-from sigae.modelos.paciente import Paciente
-
 class MinHeap:
 
     def __init__(self):
@@ -14,8 +12,8 @@ class MinHeap:
 
     @staticmethod
     def _validar_prioridade(prioridade):
-        if prioridade not in (1, 2):
-            raise ValueError("a classificação deve ser Prioridade (1) ou Normal (2)")
+        if not 1 <= prioridade <= 5:
+            raise ValueError("a classificação deve estar entre 1 e 5")
 
     def _antes(self, i, j):
         return self.v[i].chave() < self.v[j].chave()
@@ -48,12 +46,11 @@ class MinHeap:
             self._trocar(i, menor)
             i = menor
 
-    def inserir(self, paciente: Paciente):
-        self._validar_prioridade(paciente.prioridade)
-        if paciente.id in self.pos:
-            raise KeyError(f"paciente {paciente.id} já está no heap")
-        self.v.append(paciente)
-        self.pos[paciente.id] = len(self.v) - 1
+    def inserir(self, elemento):
+        if elemento.id in self.pos:
+            raise KeyError(f"item {elemento.id} já está no heap")
+        self.v.append(elemento)
+        self.pos[elemento.id] = len(self.v) - 1
         self._subir(len(self.v) - 1)
 
     def topo(self):
@@ -71,15 +68,15 @@ class MinHeap:
             self._descer(0)
         return raiz
 
-    def remover(self, id_paciente):
-        if id_paciente not in self.pos:
-            raise KeyError(f"paciente {id_paciente} não está no heap")
-        i = self.pos[id_paciente]
+    def remover(self, id_item):
+        if id_item not in self.pos:
+            raise KeyError(f"item {id_item} não está no heap")
+        i = self.pos[id_item]
         removido = self.v[i]
         ultimo = len(self.v) - 1
         self._trocar(i, ultimo)
         self.v.pop()
-        del self.pos[id_paciente]
+        del self.pos[id_item]
         if i < len(self.v):
             movido = self.v[i].id
             self._subir(i)
