@@ -53,11 +53,12 @@ def painel(sistema):
 
 MENU = """
    1. Registrar entrada              7. Concluir atendimento
-   2. Consultar ID                   8. Histórico
-   3. Reclassificar                  9. Validar índices
-   4. Cancelar                      10. Ver estruturas
-   5. Lista por chegada             11. Carregar cenário
-   6. Chamar próximo da fila         0. Sair
+   2. Consultar ID                    8. Histórico
+   3. Reclassificar                   9. Validar índices
+   4. Cancelar                       10. Ver estruturas
+   5. Lista por chegada              11. Carregar cenário
+   6. Chamar próximo da fila         12. Cadastrar médico
+   0. Sair                          13. Consultar médico
 """
 
 
@@ -131,9 +132,28 @@ def historico(sistema):
     return f"{len(fichas)} registro(s) no histórico."
 
 
+def cadastrar_medico(sistema):
+    nome = ler_texto("Nome do médico", "")
+    registro = ler_texto("Registro profissional fictício", "")
+    medico = sistema.cadastrar_medico(nome, registro)
+    return f"Médico #{medico.id} cadastrado: {medico.nome} · {medico.registro}."
+
+
+def consultar_medico(sistema):
+    medico = sistema.localizar_medico(ler_inteiro("ID do médico", 1))
+    resumo = (
+        f"Médico #{medico.id} · {medico.nome} · {medico.registro} · "
+        f"{medico.status} · {medico.concluidos} atendimento(s) concluído(s)"
+    )
+    if medico.ficha_id is not None:
+        ficha = sistema.localizar(medico.ficha_id)
+        resumo += f" · Ficha {ficha.senha}"
+    return resumo
+
+
 def validar(sistema):
     sistema.validar()
-    return "Validação concluída: árvore, Heap, Hash e estados dos pacientes consistentes. ✓"
+    return "Árvore, heaps, hashes e vínculos de atendimento validados."
 
 
 def desenhar_arvore(arvore, no, prefixo="", lado="raiz", linhas=None):
@@ -155,20 +175,28 @@ def estruturas(sistema):
     linhas = desenhar_arvore(sistema.arvore, sistema.arvore.raiz, linhas=[])
     print("\n".join(linhas) if linhas else "  (vazia)")
 
-    print("\n  Min-Heap por nível (raiz = próximo a ser chamado):")
-    v = sistema.heap.v
-    if not v:
-        print("  (vazio)")
-    inicio, nivel = 0, 0
-    while inicio < len(v):
-        fim = min(len(v), inicio + 2 ** nivel)
-        print(f"  nível {nivel}: " + "  ".join(senha(p.id, p.prioridade) for p in v[inicio:fim]))
-        inicio, nivel = fim, nivel + 1
+    print("\n  Heap de pacientes (raiz = próxima senha):")
+    exibir_niveis(sistema.heap.v, lambda paciente: senha(paciente.id, paciente.prioridade))
+
+    print("\n  Heap de médicos disponíveis (concluídos, ordem da última atribuição, ID):")
+    exibir_niveis(sistema.heap_medicos.v, lambda medico: f"#{medico.id} {medico.nome} {medico.chave()}")
 
     print("\n  Tabela Hash da fila de espera:")
     for linha in sistema.espera.exibir().split("\n"):
         print("  " + linha)
     return "Estruturas exibidas."
+
+
+def exibir_niveis(elementos, formatar):
+    if not elementos:
+        print("  (vazio)")
+        return
+    inicio, nivel = 0, 0
+    while inicio < len(elementos):
+        fim = min(len(elementos), inicio + 2 ** nivel)
+        valores = "  ".join(formatar(elemento) for elemento in elementos[inicio:fim])
+        print(f"  nível {nivel}: {valores}")
+        inicio, nivel = fim, nivel + 1
 
 
 def cadastrar_equipe_exemplo(sistema):
@@ -197,6 +225,7 @@ def carregar(sistema):
 OPERACOES = {
     1: registrar, 2: consultar, 3: reclassificar, 4: cancelar, 5: listar, 6: chamar,
     7: concluir, 8: historico, 9: validar, 10: estruturas, 11: carregar,
+    12: cadastrar_medico, 13: consultar_medico,
 }
 
 
@@ -211,7 +240,7 @@ def main():
         painel(sistema)
         print(f"  Último registro: {mensagem}")
         print(MENU)
-        opcao = ler_inteiro("Opção", 0, 11)
+        opcao = ler_inteiro("Opção", 0, max(OPERACOES))
         if opcao == 0:
             print("Até logo.")
             break
