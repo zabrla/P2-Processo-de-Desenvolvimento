@@ -1,0 +1,21 @@
+[theme]
+base = "light"
+primaryColor = "#4c57db"
+backgroundColor = "#f5f7fb"
+secondaryBackgroundColor = "#ffffff"
+textColor = "#18233a"
+borderColor = "#dce3ef"
+dataframeHeaderBackgroundColor = "#eef0ff"
+font = "DM Sans:https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap"
+headingFont = "Manrope:https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&display=swap"
+headingFontWeights = [800, 800, 700]
+baseRadius = "0.875rem"
+buttonRadius = "0.625rem"
+showWidgetBorder = true
+
+[theme.sidebar]
+primaryColor = "#a7b0ff"
+backgroundColor = "#111b32"
+secondaryBackgroundColor = "#1c2944"
+textColor = "#e2e9f7"
+borderColor = "#334364"
