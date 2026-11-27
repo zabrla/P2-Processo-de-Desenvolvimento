@@ -389,7 +389,7 @@ class SIGAE:
             objetos = {
                 "Hash": self.espera.buscar(id_paciente),
                 "Árvore": no.dado,
-                "Heap": self.heap.v[self.heap.pos[id_paciente]],
+                "Heap": self.heap.buscar(id_paciente),
             }
             for nome, objeto in objetos.items():
                 if objeto is not ficha.paciente:
@@ -486,7 +486,7 @@ class SIGAE:
             if ficha is None or ficha.status != EM_ATENDIMENTO or ficha.medico_id != medico.id:
                 raise AssertionError(f"Vínculo inválido para o médico #{medico.id}.")
             atendidos.add(ficha.id)
-        if disponiveis != set(self.heap_medicos.pos) or any(
+        if disponiveis != set(self.heap_medicos.ids()) or any(
             self.medicos.buscar(medico.id) is not medico for medico in self.heap_medicos.v
         ):
             raise AssertionError("O Heap de médicos diverge dos profissionais disponíveis.")
@@ -499,7 +499,7 @@ class SIGAE:
         if len(heap.pos) != len(heap.v):
             raise AssertionError("Heap: mapa de posições com tamanho diferente do vetor.")
         for i, elemento in enumerate(heap.v):
-            if heap.pos.get(elemento.id) != i:
+            if heap.pos.buscar(elemento.id) != i:
                 raise AssertionError(f"Heap: posição do elemento #{elemento.id} registrada errada.")
             if i > 0 and heap.v[(i - 1) // 2].chave() > elemento.chave():
                 raise AssertionError(f"Heap: #{elemento.id} tem prioridade menor que o pai.")
