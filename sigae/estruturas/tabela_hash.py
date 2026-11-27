@@ -165,15 +165,20 @@ class TabelaHash:
             raise AssertionError(f"Tamanho registrado {self._tamanho}, mas há {contados} nós")
         return True
 
-    def exibir(self):
-        linhas = []
-        for indice, cabeca in enumerate(self._buckets):
+    def ids_por_bucket(self):
+        for cabeca in self._buckets:
             ids = []
             atual = cabeca
             while atual is not None:
-                ids.append(str(atual.chave))
+                ids.append(atual.chave)
                 atual = atual.proximo
-            linhas.append(f"[{indice:>2}] " + (" -> ".join(ids) if ids else "—"))
+            yield ids
+
+    def exibir(self):
+        linhas = [
+            f"[{indice:>2}] " + (" -> ".join(map(str, ids)) if ids else "—")
+            for indice, ids in enumerate(self.ids_por_bucket())
+        ]
         linhas.append(
             f"Capacidade {self._capacidade} · Registros {self._tamanho} · "
             f"Colisões {self.colisoes()} · Carga {self.fator_carga():.0%}"
