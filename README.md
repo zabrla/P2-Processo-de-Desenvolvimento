@@ -24,7 +24,7 @@ py -m venv .venv
 .\.venv\Scripts\python.exe -m streamlit run app.py
 ```
 
-Abra o endereço informado no terminal, geralmente `http://localhost:8501`. A aplicação usa Streamlit 1.67.0 e SQLite da biblioteca padrão. Uma base nova começa sem pacientes e sem médicos. Para começar, cadastre a equipe em **Médicos** e crie fichas em **Novo paciente**. A tela **Estruturas** permite carregar dados de demonstração enquanto a base estiver sem fichas.
+Abra o endereço informado no terminal, geralmente `http://localhost:8501`. A aplicação usa Streamlit 1.67.0, Matplotlib 3.11.2 e SQLite da biblioteca padrão. Uma base nova começa sem pacientes e sem médicos. Para começar, cadastre a equipe em **Médicos** e crie fichas em **Novo paciente**. A tela **Estruturas** permite carregar dados de demonstração enquanto a base estiver sem fichas.
 
 ## Funcionalidades
 
@@ -38,7 +38,7 @@ Abra o endereço informado no terminal, geralmente `http://localhost:8501`. A ap
 | **Atendimentos** | Faça uma chamada automática ou acompanhe as fichas ativas pelo paciente, médico e horário de início. Conclua a ficha ou confirme seu cancelamento. |
 | **Histórico** | Veja conclusões e cancelamentos em ordem decrescente de encerramento. Filtre por médico, inclusive para ver cancelamentos que aconteceram após uma atribuição. |
 | **Chegadas** | Consulte a fila em ordem cronológica de chegada. |
-| **Estruturas** | Inspecione a árvore rubro-negra, os dois heaps e os buckets da hash e confira a consistência dos índices. |
+| **Estruturas** | Inspecione os gráficos da árvore rubro-negra e dos dois heaps, navegue pelos buckets da hash e confira a consistência dos índices. |
 
 Em telas de até 640 px, acesse a navegação pelo botão no canto superior esquerdo. As listas usam cartões para facilitar a leitura no celular. Em telas maiores, usam tabelas. Listas com mais de dez fichas têm seletor de página.
 
@@ -80,6 +80,10 @@ Uma sequência de chamadas registra a ordem das atribuições, inclusive quando 
 Os dois heaps usam a mesma implementação binária em vetor e instâncias independentes. O dicionário auxiliar do heap mapeia ID para posição, o que permite localizar um elemento para atualização ou remoção sem varrer o vetor. Cada instância mantém a ordem por meio de trocas, subidas e descidas no vetor. Dicionários e conjuntos também apoiam a comparação de invariantes na validação. As consultas de fichas e médicos usam as respectivas tabelas hash.
 
 A árvore, o heap de pacientes e a hash da espera contêm os mesmos IDs aguardando. Ao chamar ou cancelar na fila, esses índices removem a ficha e a hash de fichas preserva seu registro. A validação confere as propriedades da árvore, os dois heaps, as hashes, os vínculos ativos, a carga de cada médico e o histórico.
+
+### Visualização dos índices
+
+A aba **Estruturas** usa Matplotlib para desenhar os nós e as conexões da árvore rubro-negra e dos dois heaps. A vista mostra até quatro níveis por vez. Se houver mais de sete nós, selecione um foco para examinar outro ramo. Na hash, selecione uma faixa de buckets para ver os IDs e a ordem das cadeias de colisão.
 
 ## Persistência e configuração
 
