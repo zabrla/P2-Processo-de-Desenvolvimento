@@ -6,7 +6,7 @@ from sqlite3 import Error as ErroSQLite
 import streamlit as st
 
 from sigae.banco import BancoSIGAE, ID_MAXIMO
-from sigae.interface import desenhar_arvore
+from sigae.graficos import AZUL, VERDE, arvore_rubro_negra, buckets_hash, heap_binario
 from sigae.sistema import AGUARDANDO, CANCELADO, CLASSIFICACOES, EM_ATENDIMENTO, NORMAL, ErroSIGAE, SIGAE, senha
 
 
@@ -270,25 +270,103 @@ def fila(banco, sistema):
         st.rerun()
 
 
+def mostrar_arvore(arvore):
+    raiz = arvore.raiz
+    if raiz is arvore.NIL:
+        st.info("A árvore está vazia.")
+        return
+
+    chaves = [chave for chave, _ in arvore.percurso_em_ordem()]
+    if len(chaves) > 7:
+        foco = st.selectbox(
+            "Foco da árvore", [None, *chaves],
+            format_func=lambda chave: "Raiz da árvore" if chave is None else f"#{chave[1]} · {chave[0]}",
+        )
+        if foco is not None:
+            raiz = arvore.buscar(*foco)
+    st.caption("V indica vermelho e N indica negro. A seta ↓ indica descendentes fora da vista.")
+    st.pyplot(
+        arvore_rubro_negra(arvore, raiz), clear_figure=True,
+        alt=f"Árvore rubro-negra com foco na ficha #{raiz.chave[1]}.",
+    )
+
+
+def mostrar_heap(heap, rotulo, cor, titulo, vazio):
+    elementos = heap.v
+    if not elementos:
+        st.info(vazio)
+        return
+
+    raiz = 0
+    if len(elementos) > 7:
+        foco = st.selectbox(
+            "Foco do heap", [None, *(elemento.id for elemento in elementos)],
+            format_func=lambda codigo: "Raiz do heap" if codigo is None
+            else rotulo(elementos[heap.pos[codigo]]).replace("\n", " · "),
+        )
+        if foco is not None:
+            raiz = heap.pos[foco]
+        st.caption("A seta ↓ indica descendentes fora da vista.")
+
+    descricao = rotulo(elementos[raiz]).replace("\n", " · ")
+    st.pyplot(
+        heap_binario(elementos, raiz, rotulo, cor), clear_figure=True,
+        alt=f"{titulo}. Foco: {descricao}.",
+    )
+
+
+def mostrar_hash(tabela_hash):
+    capacidade = tabela_hash.capacidade()
+    registros = len(tabela_hash)
+    st.caption(
+        f"Capacidade {capacidade} · {registros} registros · "
+        f"{tabela_hash.colisoes()} colisões · Carga {tabela_hash.fator_carga():.0%}"
+    )
+    if not registros:
+        st.info("Nenhum paciente indexado na fila de espera.")
+        return
+
+    tamanho = 8
+    inicios = range(0, capacidade, tamanho)
+    buckets = list(tabela_hash.ids_por_bucket())
+    primeiro_ocupado = next(indice for indice, ids in enumerate(buckets) if ids)
+    inicio = st.selectbox(
+        "Faixa de buckets", inicios, index=primeiro_ocupado // tamanho,
+        format_func=lambda posicao: f"{posicao} a {min(posicao + tamanho, capacidade) - 1}",
+    )
+    fim = min(inicio + tamanho, capacidade)
+    st.pyplot(
+        buckets_hash(buckets[inicio:fim], inicio), clear_figure=True,
+        alt=f"Buckets {inicio} a {fim - 1} da hash de pacientes em espera.",
+    )
+
+
 def diagnostico(banco, sistema):
     st.success("Árvore, dois heaps, hashes e vínculos validados.")
-    arvore, heap, medicos_heap, hash_ = st.tabs(["Árvore Rubro-Negra", "Heap de pacientes", "Heap de médicos", "Tabela Hash"])
-    linhas = desenhar_arvore(sistema.arvore, sistema.arvore.raiz, linhas=[])
-    arvore.code("\n".join(linhas) or "(vazia)", language=None)
-    niveis = []
-    inicio, tamanho = 0, 1
-    while inicio < len(sistema.heap.v):
-        pacientes_no_nivel = sistema.heap.v[inicio : inicio + tamanho]
-        niveis.append("  ".join(senha(p.id, p.prioridade) for p in pacientes_no_nivel))
-        inicio += tamanho
-        tamanho *= 2
-    heap.code("\n".join(niveis) or "(vazio)", language=None)
-    medicos_heap.caption("Posições no vetor. Chave: concluídos, ordem da última atribuição e ID.")
-    medicos_heap.code(
-        "\n".join(f"#{medico.id} {medico.nome} · {medico.chave()}"
-                  for medico in sistema.heap_medicos.v) or "(vazio)", language=None,
+    arvore, pacientes, medicos, hash_ = st.tabs(
+        ["Árvore Rubro-Negra", "Heap de pacientes", "Heap de médicos", "Tabela Hash"],
+        key="estrutura_selecionada", on_change="rerun",
     )
-    hash_.code(sistema.espera.exibir(), language=None)
+    if arvore.open:
+        with arvore:
+            mostrar_arvore(sistema.arvore)
+    elif pacientes.open:
+        with pacientes:
+            st.caption("A raiz é a próxima chamada. Cada nó mostra a senha e o nível de risco.")
+            mostrar_heap(
+                sistema.heap, lambda paciente: f"{senha(paciente.id, paciente.prioridade)}\nRisco {paciente.prioridade}",
+                AZUL, "Heap de pacientes", "Nenhum paciente aguardando.",
+            )
+    elif medicos.open:
+        with medicos:
+            st.caption("Cada nó mostra o ID do médico e a chave (concluídos, última atribuição, ID).")
+            mostrar_heap(
+                sistema.heap_medicos, lambda medico: f"#{medico.id}\n{medico.chave()}",
+                VERDE, "Heap de médicos disponíveis", "Nenhum médico disponível.",
+            )
+    elif hash_.open:
+        with hash_:
+            mostrar_hash(sistema.espera)
 
     if len(sistema.fichas) == 0:
         st.subheader("Cenários de exemplo")
