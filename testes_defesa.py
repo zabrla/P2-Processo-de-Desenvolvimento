@@ -25,7 +25,7 @@ def imprimir_detalhes_estruturas(sistema):
         ficha = sistema.localizar(id_pac)
         obj_hash = sistema.espera.buscar(id_pac)
         obj_rb = sistema.arvore.buscar(ficha.horario, id_pac).dado
-        obj_heap = sistema.heap.v[sistema.heap.pos[id_pac]]
+        obj_heap = sistema.heap.buscar(id_pac)
         print(
             f"     -> ID {id_pac}: Hash={hex(id(obj_hash))} | "
             f"RB={hex(id(obj_rb))} | Heap={hex(id(obj_heap))}"

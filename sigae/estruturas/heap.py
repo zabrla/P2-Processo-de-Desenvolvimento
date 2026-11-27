@@ -1,14 +1,16 @@
+from sigae.estruturas.tabela_hash import TabelaHash
+
 class MinHeap:
 
     def __init__(self):
         self.v = []
-        self.pos = {} 
+        self.pos = TabelaHash()
 
     def __len__(self):
         return len(self.v)
 
     def __contains__(self, id_paciente):
-        return id_paciente in self.pos
+        return self.pos.contem(id_paciente)
 
     @staticmethod
     def _validar_prioridade(prioridade):
@@ -20,8 +22,8 @@ class MinHeap:
 
     def _trocar(self, i, j):
         self.v[i], self.v[j] = self.v[j], self.v[i]
-        self.pos[self.v[i].id] = i
-        self.pos[self.v[j].id] = j
+        self.pos.atualizar(self.v[i].id, i)
+        self.pos.atualizar(self.v[j].id, j)
 
     def _subir(self, i):
         while i > 0:
@@ -47,11 +49,24 @@ class MinHeap:
             i = menor
 
     def inserir(self, elemento):
-        if elemento.id in self.pos:
+        if self.pos.contem(elemento.id):
             raise KeyError(f"item {elemento.id} já está no heap")
         self.v.append(elemento)
-        self.pos[elemento.id] = len(self.v) - 1
+        self.pos.inserir(elemento.id, len(self.v) - 1)
         self._subir(len(self.v) - 1)
+
+    def posicao(self, id_item):
+        i = self.pos.buscar(id_item)
+        if i is None:
+            raise KeyError(f"item {id_item} não está no heap")
+        return i
+
+    def buscar(self, id_item):
+        i = self.pos.buscar(id_item)
+        return None if i is None else self.v[i]
+
+    def ids(self):
+        return [elemento.id for elemento in self.v]
 
     def topo(self):
         return self.v[0] if self.v else None
@@ -63,31 +78,27 @@ class MinHeap:
         ultimo = len(self.v) - 1
         self._trocar(0, ultimo)
         self.v.pop()
-        del self.pos[raiz.id]
+        self.pos.remover(raiz.id)
         if self.v:
             self._descer(0)
         return raiz
 
     def remover(self, id_item):
-        if id_item not in self.pos:
-            raise KeyError(f"item {id_item} não está no heap")
-        i = self.pos[id_item]
+        i = self.posicao(id_item)
         removido = self.v[i]
         ultimo = len(self.v) - 1
         self._trocar(i, ultimo)
         self.v.pop()
-        del self.pos[id_item]
+        self.pos.remover(id_item)
         if i < len(self.v):
             movido = self.v[i].id
             self._subir(i)
-            self._descer(self.pos[movido])
+            self._descer(self.pos.buscar(movido))
         return removido
 
     def alterar_prioridade(self, id_paciente, nova_prioridade):
         self._validar_prioridade(nova_prioridade)
-        if id_paciente not in self.pos:
-            raise KeyError(f"paciente {id_paciente} não está no heap")
-        i = self.pos[id_paciente]
+        i = self.posicao(id_paciente)
         antiga = self.v[i].prioridade
         self.v[i].prioridade = nova_prioridade
         if nova_prioridade < antiga:
