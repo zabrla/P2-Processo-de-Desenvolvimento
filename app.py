@@ -302,10 +302,10 @@ def mostrar_heap(heap, rotulo, cor, titulo, vazio):
         foco = st.selectbox(
             "Foco do heap", [None, *(elemento.id for elemento in elementos)],
             format_func=lambda codigo: "Raiz do heap" if codigo is None
-            else rotulo(elementos[heap.pos[codigo]]).replace("\n", " · "),
+            else rotulo(heap.buscar(codigo)).replace("\n", " · "),
         )
         if foco is not None:
-            raiz = heap.pos[foco]
+            raiz = heap.posicao(foco)
         st.caption("A seta ↓ indica descendentes fora da vista.")
 
     descricao = rotulo(elementos[raiz]).replace("\n", " · ")
